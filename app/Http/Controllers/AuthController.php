@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -36,8 +37,9 @@ class AuthController extends Controller
             'email'                  => 'required|string|email|max:255|unique:users',
             'password'               => 'required|string|min:8',
             'status'                 => 'required|string|max:255',
-            'role'                   => 'required|exists:roles,name',
-            'phone'                  => 'required|string|unique:users|regex:/^\+\d{12}$/',
+            // 'role'                   => 'required|exists:roles,name',
+            // 'phone'                  => 'required|string|unique:users|regex:/^\+\d{12}$/',
+            'phone'                  => 'required|string|regex:/^\d{12}$/|unique:users,phone,',
             'agree'                  => 'required|boolean',
             'gender'                 => 'nullable|string|max:10',
             'nationality'            => 'nullable|string|max:100',
@@ -55,7 +57,8 @@ class AuthController extends Controller
 
         try {
             // Check if role exists
-            $role = $validated['role'];
+            // $role = $validated['role'];
+            $role = 'Client';
             if (! Role::where('name', $role)->exists()) {
                 return response()->json(['message' => 'Role does not exist'], 400);
             }
@@ -78,13 +81,11 @@ class AuthController extends Controller
                 'age'                    => $validated['age'] ?? null,
                 'date_of_birth'          => $validated['date_of_birth'] ?? null,
                 'agree'                  => $validated['agree'],
-                'registration_channel'   => $validated['registration_channel'] ?? 'app',
                 'allow_notifications'    => $validated['allow_notifications'] ?? true,
                 'device_token'           => $validated['device_token'] ?? null,
                 'web_app_firebase_token' => $validated['web_app_firebase_token'] ?? null,
-                'photo'                  => $photoUrl,
+                'photo_url'              => $photoUrl,
                 'lastlogin'              => now(),
-                'role'                   => $role,
             ]);
 
             $user->update([
@@ -94,6 +95,27 @@ class AuthController extends Controller
 
             // Assign role
             $user->syncRoles([$role]);
+
+            // Using Mail facade to send the welcome email
+            Mail::send('emails.user.welcome', ['user' => $user], function ($message) use ($user) {
+                $message->to($user->email, $user->name)
+                    ->subject('Welcome to Mingo Hotel');
+            });
+
+            // Get all users with Admin role
+            $admins = User::role('System Admin')->get();
+
+            foreach ($admins as $admin) {
+                // Skip if the new user is also an admin
+                if ($admin->id === $user->id) {
+                    continue;
+                }
+
+                Mail::send('emails.user.new-user-notification', ['admin' => $admin, 'newUser' => $user], function ($message) use ($admin) {
+                    $message->to($admin->email, $admin->name)
+                        ->subject('New User Registration at Mingo Hotel');
+                });
+            }
 
             // Log activity
             $this->logActivity(
@@ -153,11 +175,7 @@ class AuthController extends Controller
         // $user = Auth::user();
 
         // Load user with related models
-        $user = User::with([
-            'regionalOffice',
-            'cso',
-        ])
-            ->where('id', Auth::user()->id)->first();
+        $user = User::where('id', Auth::user()->id)->first();
 
         // Check if the user was found
         if (! $user) {
@@ -167,33 +185,24 @@ class AuthController extends Controller
                                                       // Retrieve the token
         $token = $user->tokens->first()->token ?? ''; // Adjusted to handle potential null value
 
-        // Get the photo URL, fallback to third-party provider's photo URL if not set
-        $photoUrl = $user->photo_url;
-        if (empty($photoUrl)) {
-            $photoUrl = $user->providers()->first()->photo_url ?? null;
-        }
-
         $response = [
-            'message'              => 'Hi ' . $user->name . ', welcome to home',
-            'id'                   => $user->id,
+            'message'             => 'Hi ' . $user->name . ', welcome to home',
+            'id'                  => $user->id,
             // 'access_token'            => $token,
             // 'token_type'              => 'Bearer',
-            'name'                 => $user->name,
-            'lastlogin'            => $user->lastlogin,
-            'email'                => $user->email,
-            'gender'               => $user->gender,
-            'citizenship'          => $user->citizenship,
-            'status'               => $user->status,
-            'registration_channel' => $user->registration_channel,
-            'allow_notifications'  => $user->allow_notifications,
-            'photo_url'            => $photoUrl,
-            'permissions'          => $user->getAllPermissions()->pluck('name'), // pluck for simplified array
-            'role'                 => $user->role,
-            'phone'                => $user->phone,
-            'date_of_birth'        => $user->date_of_birth,
-            'agree'                => $user->agree,
-            'regional_office'      => $user->regionalOffice,
-            'cso'                  => $user->cso,
+            'name'                => $user->name,
+            'lastlogin'           => $user->lastlogin,
+            'email'               => $user->email,
+            'gender'              => $user->gender,
+            'citizenship'         => $user->citizenship,
+            'status'              => $user->status,
+            'allow_notifications' => $user->allow_notifications,
+            'photo_url'           => $user->photo_url,
+            'permissions'         => $user->getAllPermissions()->pluck('name'), // pluck for simplified array
+            'role'                => $user->role,
+            'phone'               => $user->phone,
+            'date_of_birth'       => $user->date_of_birth,
+            'agree'               => $user->agree,
         ];
 
         return response()->json($response);
@@ -219,10 +228,7 @@ class AuthController extends Controller
             }
 
             // Get the user based on their email
-            $user = User::with([
-                'regionalOffice',
-                'cso',
-            ])->where('email', $request['email'])->first();
+            $user = User::where('email', $request['email'])->first();
 
             // Check if the user exists
             if (! isset($user)) {
@@ -234,24 +240,24 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Account is not active'], 403);
             }
 
-            // Define the accepted roles
-            $acceptedRoles = [
-                'System Admin',
-                'PPDA Admin',
-                'CSO Admin',
-                'PPDA Officer',
-                'CSO Approver',
-                'CSO Verifier',
-                'CSO Monitor',
-            ];
+            // // Define the accepted roles
+            // $acceptedRoles = [
+            //     'System Admin',
+            //     'PPDA Admin',
+            //     'CSO Admin',
+            //     'PPDA Officer',
+            //     'CSO Approver',
+            //     'CSO Verifier',
+            //     'CSO Monitor',
+            // ];
 
             // Get the user's role
             $userRole = $user->role;
 
-            // Check if the user's role is in the accepted roles list
-            if (! in_array($userRole, $acceptedRoles)) {
-                return response()->json(['message' => 'Unauthorized role'], 403);
-            }
+            // // Check if the user's role is in the accepted roles list
+            // if (! in_array($userRole, $acceptedRoles)) {
+            //     return response()->json(['message' => 'Unauthorized role'], 403);
+            // }
 
             // Update the lastlogin field with the current timestamp
             $user->update(['lastlogin' => now()]);
@@ -261,24 +267,21 @@ class AuthController extends Controller
 
             // Build the response
             $response = [
-                'message'              => 'Hi ' . $user->name . ', welcome to home',
-                'id'                   => $user->id,
-                'access_token'         => $token,
-                'token_type'           => 'Bearer',
-                'name'                 => $user->name,
-                'photo_url'            => $user->photo_url,
-                'lastlogin'            => $user->lastlogin,
-                'email'                => $user->email,
-                'gender'               => $user->gender,
-                'status'               => $user->status,
-                'registration_channel' => $user->registration_channel,
-                'allow_notifications'  => $user->allow_notifications,
-                'permissions'          => $user->getAllPermissions()->pluck('name') ?? [],
-                'role'                 => $userRole ?? "",
-                'phone'                => $user->phone,
-                'agree'                => $user->agree,
-                'regional_office'      => $user->regionalOffice,
-                'cso'                  => $user->cso,
+                'message'             => 'Hi ' . $user->name . ', welcome to home',
+                'id'                  => $user->id,
+                'access_token'        => $token,
+                'token_type'          => 'Bearer',
+                'name'                => $user->name,
+                'photo_url'           => $user->photo_url,
+                'lastlogin'           => $user->lastlogin,
+                'email'               => $user->email,
+                'gender'              => $user->gender,
+                'status'              => $user->status,
+                'allow_notifications' => $user->allow_notifications,
+                'permissions'         => $user->getAllPermissions()->pluck('name') ?? [],
+                'role'                => $userRole ?? "",
+                'phone'               => $user->phone,
+                'agree'               => $user->agree,
 
             ];
 

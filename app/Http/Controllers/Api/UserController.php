@@ -23,25 +23,11 @@ class UserController extends Controller
     {
 
         $query = User::with([
-            'regionalOffice', 'cso', 'createdBy', 'updatedBy',
+            'createdBy', 'updatedBy',
         ]);
 
         $authUser     = Auth::user() ? User::with('roles')->find(Auth::id()) : null;
         $authUserRole = $authUser?->roles->pluck('name')->last();
-
-        $ppdaRoles = ["PPDA Admin", "PPDA Officer"];
-        $csoRoles  = ["CSO Admin", "CSO Monitor", "CSO Verifier", "CSO Approver"];
-
-        if (isset($authUser)) {
-
-            if (in_array($authUserRole, $csoRoles)) {
-                $query->where('cso_id', $authUser->cso_id);
-            }
-
-            if (in_array($authUserRole, $ppdaRoles)) {
-                $query->where('regional_office_id', $authUser->regional_office_id);
-            }
-        }
 
         // Handle role filtering (string or array)
         if ($request->filled('roles')) {
@@ -52,51 +38,6 @@ class UserController extends Controller
                 $q->whereIn('name', $requestedRoles);
             });
 
-            // Special handling if 'PPDA Admin' is among requested roles
-            if (in_array('PPDA Admin', $requestedRoles) && $authUser && in_array($authUserRole, $ppdaRoles)) {
-                $query->whereHas('roles', fn($q) => $q->where('name', 'PPDA Admin'))
-                    ->where('regional_office_id', $authUser->regional_office_id);
-            }
-
-            // Special handling if CSO role is among requested roles
-            if (array_intersect($requestedRoles, $csoRoles) && $authUser && in_array($authUserRole, $csoRoles)) {
-                $query->where('cso_id', $authUser->cso_id);
-            }
-        }
-
-        // Filter users by category role
-        $userCategory = $request->query('usersCategory');
-
-        if (isset($userCategory)) {
-            if ($userCategory === 'cso_users') {
-                $roles = ["CSO Admin", "CSO Monitor", "CSO Verifier", "CSO Approver"];
-            } elseif ($userCategory === 'ppda_users') {
-                $roles = ["PPDA Admin", "PPDA Officer", "System Admin"];
-            } else {
-                return response()->json(['message' => 'Invalid Users Category'], 400);
-            }
-
-            $query->whereHas('roles', function ($q) use ($roles) {
-                $q->whereIn('name', $roles);
-            });
-
-            // $query->filterByLatestRole($roles);
-        }
-
-        // 🔹 Filter by regional_office_ids
-        if ($request->has('regional_office_ids')) {
-            $regionalOfficeIds = $request->query('regional_office_ids');
-            if (is_array($regionalOfficeIds) && ! empty($regionalOfficeIds)) {
-                $query->whereIn('regional_office_id', $regionalOfficeIds);
-            }
-        }
-
-        // 🔹 Filter by cso_ids
-        if ($request->has('cso_ids')) {
-            $csoIds = $request->query('cso_ids');
-            if (is_array($csoIds) && ! empty($csoIds)) {
-                $query->whereIn('cso_id', $csoIds);
-            }
         }
 
         // 🔹 Filter by gender (Male or Female)
@@ -112,13 +53,7 @@ class UserController extends Controller
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'like', $searchTerm)
                     ->orWhere('email', 'like', $searchTerm)
-                    ->orWhere('phone', 'like', $searchTerm)
-                    ->orWhereHas('cso', function ($query) use ($searchTerm) {
-                        $query->where('name', 'like', $searchTerm); // Searching CSO name
-                    })
-                    ->orWhereHas('regionalOffice', function ($query) use ($searchTerm) {
-                        $query->where('name', 'like', $searchTerm); // Searching Regional Office name
-                    });
+                    ->orWhere('phone', 'like', $searchTerm);
             });
         }
 
@@ -159,7 +94,7 @@ class UserController extends Controller
     public function show($id)
     {
         $user = User::with([
-            'regionalOffice', 'cso', 'createdBy', 'updatedBy',
+            'createdBy', 'updatedBy',
         ])->findOrFail($id);
 
         return response()->json($user);
