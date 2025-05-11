@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\ActivityLogsController;
+use App\Http\Controllers\API\FeatureController;
+use App\Http\Controllers\API\RoomController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserPermissionsController;
 use App\Http\Controllers\Api\UserRolesController;
@@ -35,6 +37,13 @@ Route::post('/reset-password', [PasswordResetController::class, 'handlestoringNe
 Route::group(
     ['middleware' => ['auth:sanctum']],
     function () {
+
+        // Routes for Room Management
+        Route::apiResource('rooms', RoomController::class);
+        Route::post('bulk-destroy-rooms', [RoomController::class, 'bulkDestroy']);
+
+        // Routes for Room Management
+        Route::apiResource('features', FeatureController::class);
 
         //================== users ====================================
         Route::resource('users', UserController::class);
