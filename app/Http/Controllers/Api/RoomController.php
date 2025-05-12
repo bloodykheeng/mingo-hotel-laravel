@@ -93,22 +93,36 @@ class RoomController extends Controller
     public function store(Request $request)
     {
         try {
+            // Decode JSON fields
+            $features = json_decode($request->features, true);
+
+            // Convert string "true"/"false" to actual boolean values
+            $request->merge([
+                'features' => $features,
+                'booked'   => filter_var($request->input('booked'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            ]);
+
             $validatedData = $request->validate([
-                'name'                  => 'required|string|max:255',
-                'description'           => 'nullable|string',
-                'price'                 => 'required|numeric|min:0',
-                'stars'                 => 'required|integer|min:1|max:5',
-                'booked'                => 'nullable|boolean',
-                'number_of_adults'      => 'required|integer|min:1',
-                'number_of_children'    => 'nullable|integer|min:0',
+                'room_type'               => 'required|in:accommodation,conference_hall',
+                'name'                    => 'required|string|max:255',
+                'description'             => 'nullable|string',
+                'status'                  => 'required|string|max:50',
+                'price'                   => 'required|numeric|min:0',
+                'stars'                   => 'required|integer|min:1|max:5',
+                'booked'                  => 'nullable|boolean',
+                'number_of_adults'        => 'required|integer|min:1',
+                'number_of_children'      => 'nullable|integer|min:0',
 
-                'features'              => 'nullable|array',
-                'features.*.feature_id' => 'required|exists:features,id',
-                'features.*.amount'     => 'nullable|numeric|min:0',
-                'features.*.photo_url'  => 'nullable|string',
+                'features'                => 'nullable|array',
+                'features.*.id'           => 'required|exists:features,id',
+                'features.*.amount'       => 'nullable|numeric|min:0',
+                'features.*.photo_url'    => 'nullable|string',
 
-                'attachments'           => 'nullable|array',
-                'attachments.*.file'    => 'required|file|mimes:jpeg,png,jpg,gif,mp4,mov,mkv,avi,pdf',
+                'attachments'             => 'nullable|array',
+                'attachments.*.type'      => 'nullable|string',
+                'attachments.*.caption'   => 'nullable|string',
+                'attachments.*.file_path' => 'nullable|file|mimes:jpeg,png,jpg,gif,mp4,mov,mkv,avi,mp3,m4a,amr,3gp,wav,pdf,doc,docx,xls,xlsx,heic,hevc',
+
             ]);
 
             DB::beginTransaction();
@@ -123,8 +137,8 @@ class RoomController extends Controller
                 foreach ($validatedData['features'] as $featureData) {
                     RoomFeature::create([
                         'room_id'    => $room->id,
-                        'feature_id' => $featureData['feature_id'],
-                        'amount'     => $featureData['amount'] ?? 0,
+                        'feature_id' => $featureData['id'],
+                        'amount'     => $featureData['amount'] ?? null,
                         'photo_url'  => $featureData['photo_url'] ?? null,
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
@@ -135,13 +149,15 @@ class RoomController extends Controller
             // Handle attachments
             if (isset($validatedData['attachments'])) {
                 foreach ($validatedData['attachments'] as $index => $attachmentData) {
-                    if ($request->hasFile("attachments.$index.file")) {
-                        $uploadedFile = $request->file("attachments.$index.file");
+                    if ($request->hasFile("attachments.$index.file_path")) {
+                        $uploadedFile = $request->file("attachments.$index.file_path");
                         $fileData     = $this->handleAttachmentUpload($uploadedFile, 'room_attachments');
 
                         RoomAttachment::create([
                             'room_id'    => $room->id,
                             'file_path'  => $fileData['file_path'] ?? null,
+                            'type'       => $attachmentData['type'] ?? null,
+                            'caption'    => $attachmentData['caption'] ?? null,
                             'created_by' => Auth::id(),
                             'updated_by' => Auth::id(),
                         ]);
@@ -184,6 +200,16 @@ class RoomController extends Controller
     public function update(Request $request, $id)
     {
         try {
+
+            // Decode JSON fields
+            $features = json_decode($request->features, true);
+
+            // Convert string "true"/"false" to actual boolean values
+            $request->merge([
+                'features' => $features,
+                'booked'   => filter_var($request->input('booked'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            ]);
+
             $room = Room::with(['roomFeatures', 'roomAttachments'])->find($id);
 
             if (! isset($room)) {
@@ -193,26 +219,35 @@ class RoomController extends Controller
                 ], 404);
             }
 
+            // Convert string "true"/"false" to actual boolean values
+            $request->merge([
+                'booked' => filter_var($request->input('booked'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            ]);
+
             $validated = $request->validate([
-                'name'                  => 'required|string|max:255',
-                'description'           => 'nullable|string',
-                'price'                 => 'required|numeric|min:0',
-                'stars'                 => 'required|integer|min:1|max:5',
-                'booked'                => 'nullable|boolean',
-                'number_of_adults'      => 'required|integer|min:1',
-                'number_of_children'    => 'nullable|integer|min:0',
+                'room_type'                            => 'required|in:accommodation,conference_hall',
+                'name'                                 => 'required|string|max:255',
+                'description'                          => 'nullable|string',
+                'status'                               => 'sometimes|string|max:50',
+                'price'                                => 'required|numeric|min:0',
+                'stars'                                => 'required|integer|min:1|max:5',
+                'booked'                               => 'nullable|boolean',
+                'number_of_adults'                     => 'required|integer|min:1',
+                'number_of_children'                   => 'nullable|integer|min:0',
 
-                'features'              => 'nullable|array',
-                'features.*.id'         => 'nullable|exists:room_features,id',
-                'features.*.feature_id' => 'required|exists:features,id',
-                'features.*.amount'     => 'nullable|numeric|min:0',
-                'features.*.photo_url'  => 'nullable|string',
-                'features.*.status'     => 'nullable|string|in:existing,new,deleted',
+                'features'                             => 'nullable|array',
+                'features.*.id'                        => 'nullable|exists:room_features,id',
+                'features.*.id'                        => 'required|exists:features,id',
+                'features.*.amount'                    => 'nullable|numeric|min:0',
+                'features.*.photo_url'                 => 'nullable|string',
+                'features.*.status'                    => 'nullable|string',
 
-                'attachments'           => 'nullable|array',
-                'attachments.*.id'      => 'nullable|exists:room_attachments,id',
-                'attachments.*.status'  => 'nullable|string|in:existing,new,deleted',
-                'attachments.*.file'    => 'nullable|file|mimes:jpeg,png,jpg,gif,mp4,mov,mkv,avi,pdf',
+                'attachments'                          => 'nullable|array',
+                'attachments.*.type'                   => 'nullable|string',
+                'attachments.*.caption'                => 'nullable|string',
+                'attachments.*.status'                 => 'nullable|string',
+                'attachments.*.existing_attachment_id' => 'nullable',
+                'attachments.*.file_path'              => 'nullable|file|mimes:jpeg,png,jpg,gif,mp4,mov,mkv,avi,mp3,m4a,amr,3gp,wav,pdf,doc,docx,xls,xlsx,heic,hevc',
             ]);
 
             DB::beginTransaction();
@@ -276,13 +311,15 @@ class RoomController extends Controller
 
                 // Process new uploads
                 foreach ($validated['attachments'] as $index => $attachmentData) {
-                    if (isset($attachmentData['status']) && $attachmentData['status'] === 'new' && $request->hasFile("attachments.$index.file")) {
-                        $uploadedFile = $request->file("attachments.$index.file");
+                    if (isset($attachmentData['status']) && $attachmentData['status'] === 'new' && $request->hasFile("attachments.$index.file_path")) {
+                        $uploadedFile = $request->file("attachments.$index.file_path");
                         $fileData     = $this->handleAttachmentUpload($uploadedFile, 'room_attachments');
 
                         RoomAttachment::create([
                             'room_id'    => $room->id,
                             'file_path'  => $fileData['file_path'] ?? null,
+                            'type'       => $attachmentData['type'] ?? null,
+                            'caption'    => $attachmentData['caption'] ?? null,
                             'created_by' => Auth::id(),
                             'updated_by' => Auth::id(),
                         ]);

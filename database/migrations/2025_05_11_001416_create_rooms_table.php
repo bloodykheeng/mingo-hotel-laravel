@@ -15,6 +15,8 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->text('description')->nullable();
+            $table->string('status')->default('active');
+            $table->string('room_type')->nullable()->default('accommodation');
             $table->decimal('price', 15, 2);
             $table->integer('stars')->default(0);
             $table->boolean('booked')->default(false);

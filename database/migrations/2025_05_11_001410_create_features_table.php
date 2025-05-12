@@ -15,8 +15,15 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('icon')->nullable();
+            $table->string('status')->default('active');
             $table->string('photo_url')->nullable();
             $table->timestamps();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+
+            // Define foreign key constraints
+            $table->foreign('created_by')->references('id')->on('users')->onDelete('SET NULL');
+            $table->foreign('updated_by')->references('id')->on('users')->onDelete('SET NULL');
         });
     }
 

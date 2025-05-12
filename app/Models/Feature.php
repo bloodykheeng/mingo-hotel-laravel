@@ -11,6 +11,7 @@ class Feature extends Model
     protected $fillable = [
         'name',
         'icon',
+        'status',
         'photo_url',
         'created_by',
         'updated_by',

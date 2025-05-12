@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ActivityLogsController;
 use App\Http\Controllers\API\FeatureController;
+use App\Http\Controllers\API\RoomBookingController;
 use App\Http\Controllers\API\RoomController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserPermissionsController;
@@ -37,6 +38,10 @@ Route::post('/reset-password', [PasswordResetController::class, 'handlestoringNe
 Route::group(
     ['middleware' => ['auth:sanctum']],
     function () {
+
+        // Routes for Room booking
+        Route::apiResource('room-bookings', RoomBookingController::class);
+        Route::post('bulk-destroy-room-bookings', [RoomBookingController::class, 'bulkDestroy']);
 
         // Routes for Room Management
         Route::apiResource('rooms', RoomController::class);
