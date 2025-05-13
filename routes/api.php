@@ -34,6 +34,10 @@ Route::post('forgot-password', [PasswordResetController::class, 'forgetPassword'
 Route::get('/reset-password', [PasswordResetController::class, 'handleresetPasswordLoad']);
 Route::post('/reset-password', [PasswordResetController::class, 'handlestoringNewPassword']);
 
+// Routes for Room Management
+Route::apiResource('rooms', RoomController::class)->only(['index']);
+Route::apiResource('features', FeatureController::class)->only(['index']);
+
 //=============================== private routes ==================================
 Route::group(
     ['middleware' => ['auth:sanctum']],
@@ -44,11 +48,11 @@ Route::group(
         Route::post('bulk-destroy-room-bookings', [RoomBookingController::class, 'bulkDestroy']);
 
         // Routes for Room Management
-        Route::apiResource('rooms', RoomController::class);
+        Route::apiResource('rooms', RoomController::class)->except(['index']);
         Route::post('bulk-destroy-rooms', [RoomController::class, 'bulkDestroy']);
 
         // Routes for Room Management
-        Route::apiResource('features', FeatureController::class);
+        Route::apiResource('features', FeatureController::class)->except(['index']);
 
         //================== users ====================================
         Route::resource('users', UserController::class);
