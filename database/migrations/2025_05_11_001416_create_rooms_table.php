@@ -13,10 +13,11 @@ return new class extends Migration
     {
         Schema::create('rooms', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
+            $table->string('name')->index();
             $table->text('description')->nullable();
             $table->string('status')->default('active');
             $table->string('room_type')->nullable()->default('accommodation');
+            $table->unsignedBigInteger('room_category_id');
             $table->decimal('price', 15, 2);
             $table->integer('stars')->default(0);
             $table->boolean('booked')->default(false);
@@ -27,6 +28,7 @@ return new class extends Migration
             $table->unsignedBigInteger('updated_by')->nullable();
 
             // Define foreign key constraints
+            $table->foreign('room_category_id')->references('id')->on('room_categories')->onDelete('cascade');
             $table->foreign('created_by')->references('id')->on('users')->onDelete('SET NULL');
             $table->foreign('updated_by')->references('id')->on('users')->onDelete('SET NULL');
 

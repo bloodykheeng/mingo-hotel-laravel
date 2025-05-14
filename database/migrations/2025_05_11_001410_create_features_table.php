@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('features', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
+            $table->string('name')->index();
             $table->string('icon')->nullable();
             $table->string('status')->default('active');
             $table->string('photo_url')->nullable();

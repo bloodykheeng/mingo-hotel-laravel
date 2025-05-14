@@ -11,18 +11,18 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('room_attachments', function (Blueprint $table) {
+        Schema::create('room_categories', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('room_id');
-            $table->string('type');    // Type of attachment (image, document, etc.)
-            $table->text('file_path'); // Path to the stored file
-            $table->text('caption')->nullable();
-            $table->unsignedBigInteger('created_by')->nullable();
-            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->string('name');
+            $table->text('description')->nullable();
+            $table->string('status')->default('active');
+            $table->decimal('price', 15, 2)->nullable();
+            $table->string('photo_url')->nullable();
             $table->timestamps();
 
-            // Foreign keys
-            $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+
             $table->foreign('created_by')->references('id')->on('users')->onDelete('SET NULL');
             $table->foreign('updated_by')->references('id')->on('users')->onDelete('SET NULL');
         });
@@ -33,6 +33,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('room_attachments');
+        Schema::dropIfExists('room_categories');
     }
 };

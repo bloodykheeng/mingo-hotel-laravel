@@ -11,6 +11,8 @@ class Room extends Model
     protected $fillable = [
         'name',
         'description',
+        'room_type',
+        'room_category_id',
         'status',
         'price',
         'stars',
@@ -28,6 +30,11 @@ class Room extends Model
         'number_of_adults'   => 'integer',
         'number_of_children' => 'integer',
     ];
+
+    public function roomCategory()
+    {
+        return $this->belongsTo(RoomCategory::class);
+    }
 
     public function roomFeatures()
     {

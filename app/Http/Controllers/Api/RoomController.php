@@ -20,6 +20,7 @@ class RoomController extends Controller
     public function index(Request $request)
     {
         $query = Room::with([
+            'roomCategory',
             'roomFeatures.feature',
             'roomAttachments',
             'createdBy',
@@ -33,6 +34,11 @@ class RoomController extends Controller
                 $q->where('name', 'like', $searchTerm)
                     ->orWhere('description', 'like', $searchTerm);
             });
+        }
+
+        // Filter by room category ID
+        if ($request->filled('room_category_id')) {
+            $query->where('room_category_id', $request->input('room_category_id'));
         }
 
         // Filter by booked status
@@ -104,6 +110,7 @@ class RoomController extends Controller
 
             $validatedData = $request->validate([
                 'room_type'               => 'required|in:accommodation,conference_hall',
+                'room_category_id'        => 'required|exists:room_categories,id',
                 'name'                    => 'required|string|max:255',
                 'description'             => 'nullable|string',
                 'status'                  => 'required|string|max:50',
@@ -226,6 +233,7 @@ class RoomController extends Controller
 
             $validated = $request->validate([
                 'room_type'                            => 'required|in:accommodation,conference_hall',
+                'room_category_id'                     => 'required|exists:room_categories,id',
                 'name'                                 => 'required|string|max:255',
                 'description'                          => 'nullable|string',
                 'status'                               => 'sometimes|string|max:50',

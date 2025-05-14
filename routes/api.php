@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\ActivityLogsController;
 use App\Http\Controllers\API\FeatureController;
 use App\Http\Controllers\API\RoomBookingController;
+use App\Http\Controllers\API\RoomCategoryController;
 use App\Http\Controllers\API\RoomController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserPermissionsController;
@@ -35,20 +36,27 @@ Route::get('/reset-password', [PasswordResetController::class, 'handleresetPassw
 Route::post('/reset-password', [PasswordResetController::class, 'handlestoringNewPassword']);
 
 // Routes for Room Management
-Route::apiResource('rooms', RoomController::class)->only(['index']);
+Route::apiResource('rooms', RoomController::class)->only(['index', 'show']);
 Route::apiResource('features', FeatureController::class)->only(['index']);
+
+// Routes for Room Category Management
+Route::apiResource('room-categories', RoomCategoryController::class)->only(['index', 'show']);
 
 //=============================== private routes ==================================
 Route::group(
     ['middleware' => ['auth:sanctum']],
     function () {
 
+        // Routes for Room Category Management
+        Route::apiResource('room-categories', RoomCategoryController::class)->except(['index', 'show']);
+        Route::post('bulk-destroy-room-categories', [RoomCategoryController::class, 'bulkDestroy']);
+
         // Routes for Room booking
         Route::apiResource('room-bookings', RoomBookingController::class);
         Route::post('bulk-destroy-room-bookings', [RoomBookingController::class, 'bulkDestroy']);
 
         // Routes for Room Management
-        Route::apiResource('rooms', RoomController::class)->except(['index']);
+        Route::apiResource('rooms', RoomController::class)->except(['index', 'show']);
         Route::post('bulk-destroy-rooms', [RoomController::class, 'bulkDestroy']);
 
         // Routes for Room Management

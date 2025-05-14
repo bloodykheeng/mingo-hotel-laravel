@@ -34,6 +34,7 @@ class AuthController extends Controller
         // Validate request data
         $validated = $request->validate([
             'name'                   => 'required|string|max:255',
+            'address'                => 'required|string|max:255',
             'email'                  => 'required|string|email|max:255|unique:users',
             'password'               => 'required|string|min:8',
             'status'                 => 'required|string|max:255',
@@ -72,6 +73,7 @@ class AuthController extends Controller
             // Create user
             $user = User::create([
                 'name'                   => $validated['name'],
+                'address'                => $validated['address'],
                 'email'                  => $validated['email'],
                 'status'                 => $validated['status'],
                 'password'               => Hash::make($validated['password']),
@@ -191,6 +193,7 @@ class AuthController extends Controller
             // 'access_token'            => $token,
             // 'token_type'              => 'Bearer',
             'name'                => $user->name,
+            'address'             => $user->address,
             'lastlogin'           => $user->lastlogin,
             'email'               => $user->email,
             'gender'              => $user->gender,
@@ -272,6 +275,7 @@ class AuthController extends Controller
                 'access_token'        => $token,
                 'token_type'          => 'Bearer',
                 'name'                => $user->name,
+                'address'             => $user->address,
                 'photo_url'           => $user->photo_url,
                 'lastlogin'           => $user->lastlogin,
                 'email'               => $user->email,

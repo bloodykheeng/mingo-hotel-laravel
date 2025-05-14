@@ -120,6 +120,7 @@ class UserController extends Controller
             // Validate request (Removed 'role' validation)
             $validated = $request->validate([
                 'name'                   => 'required|string|max:255',
+                'address'                => 'required|string|max:255',
                 'email'                  => 'required|email|unique:users,email',
                 'password'               => 'required|string|min:8',
                 // 'phone'                  => 'required|string|regex:/^\+\d{12}$/|unique:users,phone,',
@@ -233,6 +234,7 @@ class UserController extends Controller
             // Validation rules with unique email exception for current user
             $validated = $request->validate([
                 'name'                   => 'sometimes|string|max:255',
+                'address'                => 'sometimes|string|max:255',
                 'email'                  => 'sometimes|email|unique:users,email,' . $user->id,
                 'password'               => 'sometimes|string|min:8',
                 // 'phone'                  => 'required|string|regex:/^\+\d{12}$/|unique:users,phone,' . $user->id,
