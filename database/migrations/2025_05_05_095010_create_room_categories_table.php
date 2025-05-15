@@ -13,7 +13,8 @@ return new class extends Migration
     {
         Schema::create('room_categories', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
+            $table->string('name')->index();
+            $table->string('icon')->nullable();
             $table->text('description')->nullable();
             $table->string('status')->default('active');
             $table->decimal('price', 15, 2)->nullable();
