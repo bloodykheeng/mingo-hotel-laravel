@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('name')->index();
             $table->string('email')->nullable()->unique()->index();
-            $table->text('address')->nullable()->index();
+            $table->text('address')->nullable();
             $table->timestamp('email_verified_at')->nullable();
             $table->boolean('allow_notifications')->default(true);
             $table->string('status')->nullable()->default("deactive")->index();
