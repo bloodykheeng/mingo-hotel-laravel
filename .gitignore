@@ -21,3 +21,10 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+
+/public/feature_images/*
+/public/room_attachments/*
+/public/room_category_images/*
+/public/room_images/*
+/public/user_photos/*
