@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('name')->index();
             $table->text('description')->nullable();
             $table->string('status')->default('active');
+            $table->string('photo_url')->nullable();
             $table->string('room_type')->nullable()->default('accommodation');
             $table->unsignedBigInteger('room_category_id');
             $table->decimal('price', 15, 2);

@@ -4,12 +4,13 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Room;
 use App\Models\RoomBooking;
+use App\Models\User;
 use App\Traits\Loggable;
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
 class RoomBookingController extends Controller
 {
@@ -19,42 +20,158 @@ class RoomBookingController extends Controller
     {
         $query = RoomBooking::with(['room', 'createdBy', 'updatedBy']);
 
-        // Filter by room if provided
-        if ($request->has('room_id')) {
-            $query->where('room_id', $request->query('room_id'));
-        }
-
-        // Filter by date range if provided
-        if ($request->has('start_date') && $request->has('end_date')) {
-            $startDate = Carbon::parse($request->query('start_date'));
-            $endDate   = Carbon::parse($request->query('end_date'));
-
-            $query->where(function (Builder $query) use ($startDate, $endDate) {
-                // Find bookings that overlap with the requested date range
-                $query->where(function (Builder $subQuery) use ($startDate, $endDate) {
-                    $subQuery->where('check_in', '>=', $startDate)
-                        ->where('check_in', '<=', $endDate);
-                })->orWhere(function (Builder $subQuery) use ($startDate, $endDate) {
-                    $subQuery->where('check_out', '>=', $startDate)
-                        ->where('check_out', '<=', $endDate);
-                })->orWhere(function (Builder $subQuery) use ($startDate, $endDate) {
-                    $subQuery->where('check_in', '<=', $startDate)
-                        ->where('check_out', '>=', $endDate);
-                });
+        if ($request->has('search')) {
+            $search = $request->query('search');
+            $query->whereHas('room', function ($q) use ($search) {
+                $q->where('name', 'like', '%' . $search . '%');
             });
         }
 
-        // Sort by check_in date by default
-        $query->orderBy('check_in', 'asc');
-
-        // Return paginated results if pagination is requested
         if ($request->boolean('paginate')) {
             $perPage = $request->get('rowsPerPage', 10);
-            return response()->json(['data' => $query->paginate($perPage)]);
+            return response()->json(['data' => $query->latest()->paginate($perPage)]);
         }
 
-        // Otherwise return all results
-        return response()->json(['data' => $query->get()]);
+        return response()->json(['data' => $query->latest()->get()]);
+    }
+
+    private function validateRoomAvailability(array $data, $bookingId = null, $method = 'store')
+    {
+        try {
+            // Extract required data
+            $roomId           = $data['room_id'];
+            $checkIn          = $data['check_in'];
+            $checkOut         = $data['check_out'];
+            $numberOfAdults   = $data['number_of_adults'];
+            $numberOfChildren = $data['number_of_children'] ?? 0;
+
+            // Verify the room exists
+            $room = Room::find($roomId);
+            if (! $room) {
+                return response()->json([
+                    'message'       => 'Room not found',
+                    'error_details' => "Room with ID {$roomId} does not exist.",
+                    'errors'        => ['room_id' => 'The selected room does not exist.'],
+                ], 422);
+            }
+
+            // Check if room is marked as booked (only for new bookings or room changes)
+            if ($room->booked && ($method === 'store' || ($method === 'update' && $bookingId))) {
+                // For updates, check if this is a different room than the current booking
+                $skipCheck = false;
+                if ($method === 'update' && $bookingId) {
+                    $currentBooking = RoomBooking::find($bookingId);
+                    // Skip the booked check if we're updating the same room
+                    if ($currentBooking && $currentBooking->room_id == $roomId) {
+                        $skipCheck = true;
+                    }
+                }
+
+                if (! $skipCheck) {
+                    return response()->json([
+                        'message'       => 'Room is not available',
+                        'error_details' => "Room {$room->name} is currently marked as booked.",
+                        'errors'        => ['room_id' => 'This room is currently not available for booking.'],
+                    ], 422);
+                }
+            }
+
+            // Check if room can accommodate the number of guests
+            if ($numberOfAdults > $room->number_of_adults) {
+                return response()->json([
+                    'message'       => 'Room capacity exceeded',
+                    'error_details' => "Room {$room->name} can only accommodate {$room->number_of_adults} adults.",
+                    'errors'        => ['number_of_adults' => "This room can only accommodate {$room->number_of_adults} adults."],
+                ], 422);
+            }
+
+            if ($numberOfChildren > $room->number_of_children) {
+                return response()->json([
+                    'message'       => 'Room capacity exceeded',
+                    'error_details' => "Room {$room->name} can only accommodate {$room->number_of_children} children.",
+                    'errors'        => ['number_of_children' => "This room can only accommodate {$room->number_of_children} children."],
+                ], 422);
+            }
+
+            // Convert to Carbon instances for easier date comparison
+            $checkInDate  = Carbon::parse($checkIn);
+            $checkOutDate = Carbon::parse($checkOut);
+
+            // Verify the check-in date is not in the past (only for new bookings)
+            if ($method === 'store' && $checkInDate->isPast() && $checkInDate->isToday() === false) {
+                return response()->json([
+                    'message'       => 'Invalid check-in date',
+                    'error_details' => "Check-in date cannot be in the past.",
+                    'errors'        => ['check_in' => 'Check-in date cannot be in the past.'],
+                ], 422);
+            }
+
+            // Check for overlapping bookings
+            $query = RoomBooking::where('room_id', $roomId)
+                ->where(function ($q) use ($checkInDate, $checkOutDate) {
+                    // Case 1: New booking check-in date falls within an existing booking
+                    $q->where(function ($q1) use ($checkInDate, $checkOutDate) {
+                        $q1->where('check_in', '<=', $checkInDate)
+                            ->where('check_out', '>', $checkInDate);
+                    })
+                    // Case 2: New booking check-out date falls within an existing booking
+                        ->orWhere(function ($q2) use ($checkInDate, $checkOutDate) {
+                            $q2->where('check_in', '<', $checkOutDate)
+                                ->where('check_out', '>=', $checkOutDate);
+                        })
+                    // Case 3: New booking completely encompasses an existing booking
+                        ->orWhere(function ($q3) use ($checkInDate, $checkOutDate) {
+                            $q3->where('check_in', '>=', $checkInDate)
+                                ->where('check_out', '<=', $checkOutDate);
+                        });
+                });
+
+            // If this is an update operation, exclude the current booking from the check
+            if ($method === 'update' && $bookingId) {
+                $query->where('id', '!=', $bookingId);
+            }
+
+            $overlappingBookings = $query->get();
+
+            if ($overlappingBookings->count() > 0) {
+                // Format the conflicting dates for a clear error message
+                $conflicts = $overlappingBookings->map(function ($booking) {
+                    return [
+                        'check_in'  => Carbon::parse($booking->check_in)->format('Y-m-d'),
+                        'check_out' => Carbon::parse($booking->check_out)->format('Y-m-d'),
+                    ];
+                });
+
+                return response()->json([
+                    'message'       => 'Room is already booked for the selected dates',
+                    'error_details' => "Room {$room->name} has overlapping bookings for the selected period.",
+                    'conflicts'     => $conflicts,
+                    'errors'        => ['dates' => 'This room is already booked during the selected period. Please choose different dates.'],
+                ], 422);
+            }
+
+            // All checks passed
+            return null;
+        } catch (\Exception $e) {
+            // Log the error
+
+            $this->logActivity(
+                'Room availability validation failed',
+                "Room availability validation error: {$e->getMessage()}",
+                [
+                    'room_id'    => $data['room_id'] ?? 'unknown',
+                    'check_in'   => $data['check_in'] ?? 'unknown',
+                    'check_out'  => $data['check_out'] ?? 'unknown',
+                    'error_line' => $e->getLine(),
+                ]
+            );
+
+            return response()->json([
+                'message' => 'An error occurred while validating room availability',
+                'error'   => $e->getMessage(),
+                'line'    => $e->getLine(),
+            ], 500);
+        }
     }
 
     public function store(Request $request)
@@ -62,54 +179,24 @@ class RoomBookingController extends Controller
         try {
             $validated = $request->validate([
                 'room_id'            => 'required|exists:rooms,id',
-                'check_in'           => 'required|date',
-                'check_out'          => 'required|date|after:check_in',
+                'check_in'           => 'required|date|before_or_equal:check_out',
+                'check_out'          => 'required|date|after_or_equal:check_in',
                 'number_of_adults'   => 'required|integer|min:1',
                 'number_of_children' => 'nullable|integer|min:0',
                 'description'        => 'nullable|string',
             ]);
 
-            // Parse dates for overlap checking
-            $checkIn  = Carbon::parse($validated['check_in']);
-            $checkOut = Carbon::parse($validated['check_out']);
-
-            // Check if room is already booked for the requested dates
-            $roomBookingConflict = RoomBooking::where('room_id', $validated['room_id'])
-                ->where(function (Builder $query) use ($checkIn, $checkOut) {
-                    $query->where(function (Builder $subQuery) use ($checkIn, $checkOut) {
-                        $subQuery->where('check_in', '<=', $checkIn)
-                            ->where('check_out', '>', $checkIn);
-                    })->orWhere(function (Builder $subQuery) use ($checkIn, $checkOut) {
-                        $subQuery->where('check_in', '<', $checkOut)
-                            ->where('check_out', '>=', $checkOut);
-                    })->orWhere(function (Builder $subQuery) use ($checkIn, $checkOut) {
-                        $subQuery->where('check_in', '>=', $checkIn)
-                            ->where('check_out', '<=', $checkOut);
-                    });
-                })
-                ->exists();
-
-            if ($roomBookingConflict) {
-                return response()->json([
-                    'message' => 'Room is already booked for the selected dates',
-                    'errors'  => [
-                        'check_in'  => ['Room is not available for these dates'],
-                        'check_out' => ['Room is not available for these dates'],
-                    ],
-                ], 422);
+            // Set default value for number_of_children if not provided
+            if (! isset($validated['number_of_children'])) {
+                $validated['number_of_children'] = 0;
             }
 
-            // Check room capacity
-            $room        = Room::findOrFail($validated['room_id']);
-            $totalGuests = $validated['number_of_adults'] + ($validated['number_of_children'] ?? 0);
-            if ($totalGuests > $room->capacity) {
-                return response()->json([
-                    'message' => 'Number of guests exceeds room capacity',
-                    'errors'  => [
-                        'number_of_adults'   => ['Total number of guests exceeds room capacity of ' . $room->capacity],
-                        'number_of_children' => ['Total number of guests exceeds room capacity of ' . $room->capacity],
-                    ],
-                ], 422);
+            // Validate room availability first
+            $availabilityError = $this->validateRoomAvailability($validated, null, 'store');
+
+            // Return early if validation fails
+            if ($availabilityError) {
+                return $availabilityError;
             }
 
             $validated['created_by'] = Auth::id();
@@ -117,22 +204,51 @@ class RoomBookingController extends Controller
 
             DB::beginTransaction();
 
-            $booking = RoomBooking::create($validated);
+            $roomBooking = RoomBooking::create($validated);
 
             $this->logActivity(
                 'room_booking_created',
-                "Room booking created for room #{$booking->room_id} from {$booking->check_in->format('Y-m-d')} to {$booking->check_out->format('Y-m-d')}",
-                [
-                    'booking_id' => $booking->id,
-                    'room_id'    => $booking->room_id,
-                ]
+                "Room booking for room ID {$validated['room_id']} created.",
+                ['room_booking_id' => $roomBooking->id]
             );
+
+            // Load the related room and user information for the email
+            $roomBooking->load(['room', 'createdBy']);
+
+            // Get all System Admin users
+            $systemAdmins = User::where('role', 'System Admin')->get();
+
+            // Send email notification to all System Admins
+            foreach ($systemAdmins as $admin) {
+                try {
+                    Mail::send('emails.room-bookings.admin_notification', [
+                        'admin'       => $admin,
+                        'roomBooking' => $roomBooking,
+                        'room'        => $roomBooking->room,
+                        'client'      => $roomBooking->createdBy,
+                    ], function ($message) use ($admin, $roomBooking) {
+                        $message->to($admin->email)
+                            ->subject("New Room Booking: {$roomBooking->room->name} - Mingo Hotel Kayunga");
+                    });
+                } catch (\Exception $e) {
+                    $this->logActivity(
+                        'email_send_failed',
+                        "Failed to send room booking notification email to admin: {$admin->email}. Error: {$e->getMessage()}",
+                        [
+                            'room_booking_id' => $roomBooking->id,
+                            'admin_id'        => $admin->id,
+                            'error_line'      => $e->getLine(),
+                            'user_id'         => Auth::id(),
+                        ]
+                    );
+                }
+            }
 
             DB::commit();
 
             return response()->json([
                 'message' => 'Room booking created successfully',
-                'data'    => $booking->load('room'),
+                'data'    => $roomBooking,
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -154,104 +270,95 @@ class RoomBookingController extends Controller
         }
     }
 
-    public function show($id)
-    {
-        $booking = RoomBooking::with(['room', 'createdBy', 'updatedBy'])->findOrFail($id);
-        return response()->json($booking);
-    }
-
     public function update(Request $request, $id)
     {
         try {
-            $booking = RoomBooking::findOrFail($id);
+            $roomBooking = RoomBooking::findOrFail($id);
 
             $validated = $request->validate([
                 'room_id'            => 'sometimes|exists:rooms,id',
-                'check_in'           => 'sometimes|date',
-                'check_out'          => 'sometimes|date|after:check_in',
+                'check_in'           => 'sometimes|date|before_or_equal:check_out',
+                'check_out'          => 'sometimes|date|after_or_equal:check_in',
                 'number_of_adults'   => 'sometimes|integer|min:1',
                 'number_of_children' => 'nullable|integer|min:0',
                 'description'        => 'nullable|string',
             ]);
 
-            // Use existing values if not provided
-            $roomId           = $validated['room_id'] ?? $booking->room_id;
-            $checkIn          = isset($validated['check_in']) ? Carbon::parse($validated['check_in']) : $booking->check_in;
-            $checkOut         = isset($validated['check_out']) ? Carbon::parse($validated['check_out']) : $booking->check_out;
-            $numberOfAdults   = $validated['number_of_adults'] ?? $booking->number_of_adults;
-            $numberOfChildren = $validated['number_of_children'] ?? $booking->number_of_children;
-
-            // Check if room is already booked for the requested dates (excluding current booking)
-            $roomBookingConflict = RoomBooking::where('room_id', $roomId)
-                ->where('id', '!=', $id)
-                ->where(function (Builder $query) use ($checkIn, $checkOut) {
-                    $query->where(function (Builder $subQuery) use ($checkIn, $checkOut) {
-                        $subQuery->where('check_in', '<=', $checkIn)
-                            ->where('check_out', '>', $checkIn);
-                    })->orWhere(function (Builder $subQuery) use ($checkIn, $checkOut) {
-                        $subQuery->where('check_in', '<', $checkOut)
-                            ->where('check_out', '>=', $checkOut);
-                    })->orWhere(function (Builder $subQuery) use ($checkIn, $checkOut) {
-                        $subQuery->where('check_in', '>=', $checkIn)
-                            ->where('check_out', '<=', $checkOut);
-                    });
-                })
-                ->exists();
-
-            if ($roomBookingConflict) {
-                return response()->json([
-                    'message' => 'Room is already booked for the selected dates',
-                    'errors'  => [
-                        'check_in'  => ['Room is not available for these dates'],
-                        'check_out' => ['Room is not available for these dates'],
-                    ],
-                ], 422);
-            }
-
-            // Check room capacity
-            $room        = Room::findOrFail($roomId);
-            $totalGuests = $numberOfAdults + $numberOfChildren;
-            if ($totalGuests > $room->capacity) {
-                return response()->json([
-                    'message' => 'Number of guests exceeds room capacity',
-                    'errors'  => [
-                        'number_of_adults'   => ['Total number of guests exceeds room capacity of ' . $room->capacity],
-                        'number_of_children' => ['Total number of guests exceeds room capacity of ' . $room->capacity],
-                    ],
-                ], 422);
-            }
-
             $validated['updated_by'] = Auth::id();
+
+            // Prepare complete data for availability check by merging existing data with updates
+            $validationData = array_merge([
+                'room_id'            => $roomBooking->room_id,
+                'check_in'           => $roomBooking->check_in,
+                'check_out'          => $roomBooking->check_out,
+                'number_of_adults'   => $roomBooking->number_of_adults,
+                'number_of_children' => $roomBooking->number_of_children,
+            ], $validated);
+
+            // Validate room availability
+            $availabilityError = $this->validateRoomAvailability($validationData, $id, 'update');
+
+            // Return early if validation fails
+            if ($availabilityError) {
+                return $availabilityError;
+            }
 
             DB::beginTransaction();
 
-            $booking->update($validated);
+            $roomBooking->update($validated);
 
             $this->logActivity(
                 'room_booking_updated',
-                "Room booking #{$booking->id} updated for room #{$booking->room_id} from {$booking->check_in->format('Y-m-d')} to {$booking->check_out->format('Y-m-d')}",
-                [
-                    'booking_id' => $booking->id,
-                    'room_id'    => $booking->room_id,
-                ]
+                "Room booking ID {$roomBooking->id} updated.",
+                ['room_booking_id' => $roomBooking->id]
             );
+
+            // Load the related room and user information for the email
+            $roomBooking->load(['room', 'createdBy', 'updatedBy']);
+
+            // Get all System Admin users
+            $systemAdmins = User::where('role', 'System Admin')->get();
+
+            // Send email notification to all System Admins
+            foreach ($systemAdmins as $admin) {
+                try {
+                    Mail::send('emails.room-bookings.admin_update_notification', [
+                        'admin'       => $admin,
+                        'roomBooking' => $roomBooking,
+                        'room'        => $roomBooking->room,
+                        'client'      => $roomBooking->createdBy,
+                        'updatedBy'   => $roomBooking->updatedBy,
+                    ], function ($message) use ($admin, $roomBooking) {
+                        $message->to($admin->email)
+                            ->subject("Room Booking Updated: {$roomBooking->room->name} - Mingo Hotel Kayunga");
+                    });
+                } catch (\Exception $e) {
+                    $this->logActivity(
+                        'email_send_failed',
+                        "Failed to send room booking update notification email to admin: {$admin->email}. Error: {$e->getMessage()}",
+                        [
+                            'room_booking_id' => $roomBooking->id,
+                            'admin_id'        => $admin->id,
+                            'error_line'      => $e->getLine(),
+                            'user_id'         => Auth::id(),
+                        ]
+                    );
+                }
+            }
 
             DB::commit();
 
-            return response()->json([
-                'message' => 'Room booking updated successfully',
-                'data'    => $booking->fresh()->load('room'),
-            ]);
+            return response()->json(['message' => 'Room booking updated successfully']);
         } catch (\Exception $e) {
             DB::rollBack();
 
             $this->logActivity(
                 'room_booking_update_failed',
-                "Failed to update room booking with ID {$id}. Error: {$e->getMessage()}",
+                "Failed to update room booking ID {$id}. Error: {$e->getMessage()}",
                 [
-                    'error_line' => $e->getLine(),
-                    'booking_id' => $id,
-                    'user_id'    => Auth::id(),
+                    'error_line'      => $e->getLine(),
+                    'user_id'         => Auth::id(),
+                    'room_booking_id' => $id,
                 ]
             );
 
@@ -262,207 +369,50 @@ class RoomBookingController extends Controller
             ], 500);
         }
     }
-
     public function destroy($id)
     {
-        try {
-            $booking = RoomBooking::findOrFail($id);
+        $roomBooking = RoomBooking::findOrFail($id);
+        $roomBooking->delete();
 
-            // Check if booking is in the past
-            if ($booking->check_in->isPast() && now()->greaterThan($booking->check_in)) {
-                return response()->json([
-                    'message' => 'Cannot delete bookings that have already started or completed',
-                ], 422);
-            }
+        $this->logActivity(
+            'room_booking_deleted',
+            "Room booking ID {$id} deleted.",
+            ['room_booking_id' => $id]
+        );
 
-            DB::beginTransaction();
-
-            $bookingDetails = [
-                'id'        => $booking->id,
-                'room_id'   => $booking->room_id,
-                'check_in'  => $booking->check_in->format('Y-m-d'),
-                'check_out' => $booking->check_out->format('Y-m-d'),
-            ];
-
-            $booking->delete();
-
-            $this->logActivity(
-                'room_booking_deleted',
-                "Room booking #{$bookingDetails['id']} for room #{$bookingDetails['room_id']} from {$bookingDetails['check_in']} to {$bookingDetails['check_out']} was deleted",
-                $bookingDetails
-            );
-
-            DB::commit();
-
-            return response()->json(['message' => 'Room booking deleted successfully']);
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            $this->logActivity(
-                'room_booking_delete_failed',
-                "Failed to delete room booking with ID {$id}. Error: {$e->getMessage()}",
-                [
-                    'error_line' => $e->getLine(),
-                    'booking_id' => $id,
-                    'user_id'    => Auth::id(),
-                ]
-            );
-
-            return response()->json([
-                'message' => 'An error occurred while deleting room booking.',
-                'error'   => $e->getMessage(),
-                'line'    => $e->getLine(),
-            ], 500);
-        }
+        return response()->json(['message' => 'Room booking deleted successfully']);
     }
 
     public function bulkDestroy(Request $request)
     {
-        try {
-            $itemsToDelete = $request->input('itemsToDelete');
+        $itemsToDelete = $request->input('itemsToDelete');
 
-            if (! is_array($itemsToDelete) || empty($itemsToDelete)) {
-                return response()->json(['message' => 'Invalid or empty booking data'], 400);
-            }
-
-            $bookingIds = array_column($itemsToDelete, 'id');
-
-            if (empty($bookingIds)) {
-                return response()->json(['message' => 'No valid booking IDs found'], 400);
-            }
-
-            $bookings = RoomBooking::whereIn('id', $bookingIds)->get();
-
-            if ($bookings->isEmpty()) {
-                return response()->json(['message' => 'No matching bookings found'], 404);
-            }
-
-            // Check if any bookings are in the past
-            $pastBookings = [];
-            foreach ($bookings as $booking) {
-                if ($booking->check_in->isPast() && now()->greaterThan($booking->check_in)) {
-                    $pastBookings[] = "Booking #{$booking->id} for {$booking->check_in->format('Y-m-d')}";
-                }
-            }
-
-            if (! empty($pastBookings)) {
-                return response()->json([
-                    'message' => 'Cannot delete bookings that have already started or completed: ' . implode(', ', $pastBookings),
-                ], 422);
-            }
-
-            DB::beginTransaction();
-
-            // Track deleted bookings for logging
-            $deletedBookings = $bookings->map(function ($booking) {
-                return [
-                    'id'        => $booking->id,
-                    'room_id'   => $booking->room_id,
-                    'check_in'  => $booking->check_in->format('Y-m-d'),
-                    'check_out' => $booking->check_out->format('Y-m-d'),
-                ];
-            })->toArray();
-
-            RoomBooking::whereIn('id', $bookingIds)->delete();
-
-            $bookingIdList = implode(', ', $bookingIds);
-            $this->logActivity(
-                'room_bookings_bulk_deleted',
-                "Room bookings deleted: {$bookingIdList}",
-                ['booking_ids' => $bookingIds, 'details' => $deletedBookings]
-            );
-
-            DB::commit();
-
-            return response()->json(['message' => 'Room bookings deleted successfully']);
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            $this->logActivity(
-                'room_bookings_bulk_delete_failed',
-                "Failed to bulk delete room bookings. Error: {$e->getMessage()}",
-                [
-                    'error_line' => $e->getLine(),
-                    'user_id'    => Auth::id(),
-                ]
-            );
-
-            return response()->json([
-                'message' => 'An error occurred while deleting room bookings.',
-                'error'   => $e->getMessage(),
-                'line'    => $e->getLine(),
-            ], 500);
-        }
-    }
-
-    /**
-     * Get availability for a specific room within a date range
-     */
-    public function checkRoomAvailability(Request $request)
-    {
-        $validated = $request->validate([
-            'room_id'    => 'required|exists:rooms,id',
-            'start_date' => 'required|date',
-            'end_date'   => 'required|date|after:start_date',
-        ]);
-
-        $roomId    = $validated['room_id'];
-        $startDate = Carbon::parse($validated['start_date'])->startOfDay();
-        $endDate   = Carbon::parse($validated['end_date'])->endOfDay();
-
-        // Get all bookings for this room within the date range
-        $bookings = RoomBooking::where('room_id', $roomId)
-            ->where(function (Builder $query) use ($startDate, $endDate) {
-                $query->where(function (Builder $subQuery) use ($startDate, $endDate) {
-                    $subQuery->where('check_in', '>=', $startDate)
-                        ->where('check_in', '<=', $endDate);
-                })->orWhere(function (Builder $subQuery) use ($startDate, $endDate) {
-                    $subQuery->where('check_out', '>=', $startDate)
-                        ->where('check_out', '<=', $endDate);
-                })->orWhere(function (Builder $subQuery) use ($startDate, $endDate) {
-                    $subQuery->where('check_in', '<=', $startDate)
-                        ->where('check_out', '>=', $endDate);
-                });
-            })
-            ->get(['id', 'check_in', 'check_out']);
-
-        // Generate availability data
-        $availabilityData = [];
-        $current          = clone $startDate;
-
-        while ($current <= $endDate) {
-            $dateKey              = $current->format('Y-m-d');
-            $isAvailable          = true;
-            $conflictingBookingId = null;
-
-            // Check if date is within any booking
-            foreach ($bookings as $booking) {
-                $bookingStart = Carbon::parse($booking->check_in)->startOfDay();
-                $bookingEnd   = Carbon::parse($booking->check_out)->startOfDay();
-
-                if ($current->greaterThanOrEqualTo($bookingStart) && $current->lessThan($bookingEnd)) {
-                    $isAvailable          = false;
-                    $conflictingBookingId = $booking->id;
-                    break;
-                }
-            }
-
-            $availabilityData[] = [
-                'date'       => $dateKey,
-                'available'  => $isAvailable,
-                'booking_id' => $conflictingBookingId,
-            ];
-
-            $current->addDay();
+        if (! is_array($itemsToDelete) || empty($itemsToDelete)) {
+            return response()->json(['message' => 'Invalid or empty booking data'], 400);
         }
 
-        return response()->json([
-            'data' => [
-                'room_id'      => $roomId,
-                'start_date'   => $startDate->format('Y-m-d'),
-                'end_date'     => $endDate->format('Y-m-d'),
-                'availability' => $availabilityData,
-            ],
-        ]);
+        $bookingIds = array_column($itemsToDelete, 'id');
+
+        if (empty($bookingIds)) {
+            return response()->json(['message' => 'No valid booking IDs found'], 400);
+        }
+
+        $bookings = RoomBooking::whereIn('id', $bookingIds)->get();
+
+        if ($bookings->isEmpty()) {
+            return response()->json(['message' => 'No matching bookings found'], 404);
+        }
+
+        $deletedBookingIds = $bookings->pluck('id')->toArray();
+
+        RoomBooking::whereIn('id', $bookingIds)->delete();
+
+        $this->logActivity(
+            'room_bookings_bulk_deleted',
+            'Room bookings deleted: ' . implode(', ', $deletedBookingIds),
+            ['room_booking_ids' => $deletedBookingIds]
+        );
+
+        return response()->json(['message' => 'Room bookings deleted successfully']);
     }
 }

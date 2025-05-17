@@ -11,6 +11,7 @@ class Room extends Model
     protected $fillable = [
         'name',
         'description',
+        'photo_url',
         'room_type',
         'room_category_id',
         'status',

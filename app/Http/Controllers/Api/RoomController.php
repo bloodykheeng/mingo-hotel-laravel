@@ -96,6 +96,113 @@ class RoomController extends Controller
         return response()->json($room);
     }
 
+    /**
+     * Check room availability for the specified dates and guest count
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function checkAvailability(Request $request)
+    {
+        // Validate the request
+        $validated = $request->validate([
+            'checkInDate'  => 'required|date',
+            'checkOutDate' => 'required|date|after:checkInDate',
+            'adults'       => 'required|integer|min:1',
+            'children'     => 'sometimes|integer|min:0',
+        ]);
+
+        // Set default for children if not provided
+        $numberOfChildren = $validated['children'] ?? 0;
+
+        // Convert to Carbon instances
+        $checkInDate  = Carbon::parse($validated['checkInDate']);
+        $checkOutDate = Carbon::parse($validated['checkOutDate']);
+
+        // Verify check-in date is not in the past
+        if ($checkInDate->isPast() && $checkInDate->isToday() === false) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Check-in date cannot be in the past',
+            ], 422);
+        }
+
+        // Find all rooms that can accommodate the guests
+        $availableRooms = Room::where('number_of_adults', '>=', $validated['adults'])
+            ->where('number_of_children', '>=', $numberOfChildren)
+            ->where('booked', false)
+            ->get();
+
+        // Filter rooms for booking conflicts
+        $finalAvailableRooms = collect();
+
+        foreach ($availableRooms as $room) {
+            // Check for overlapping bookings
+            $hasOverlap = DB::table('room_bookings')
+                ->where('room_id', $room->id)
+                ->where(function ($q) use ($checkInDate, $checkOutDate) {
+                    // Case 1: New booking check-in date falls within an existing booking
+                    $q->where(function ($q1) use ($checkInDate, $checkOutDate) {
+                        $q1->where('check_in', '<=', $checkInDate)
+                            ->where('check_out', '>', $checkInDate);
+                    })
+                    // Case 2: New booking check-out date falls within an existing booking
+                        ->orWhere(function ($q2) use ($checkInDate, $checkOutDate) {
+                            $q2->where('check_in', '<', $checkOutDate)
+                                ->where('check_out', '>=', $checkOutDate);
+                        })
+                    // Case 3: New booking completely encompasses an existing booking
+                        ->orWhere(function ($q3) use ($checkInDate, $checkOutDate) {
+                            $q3->where('check_in', '>=', $checkInDate)
+                                ->where('check_out', '<=', $checkOutDate);
+                        });
+                })
+                ->exists();
+
+            if (! $hasOverlap) {
+                // Add room details
+                $room->features    = $room->features ?? [];
+                $room->attachments = $room->attachments ?? [];
+
+                $finalAvailableRooms->push($room);
+            }
+        }
+
+        // Check if no rooms are available
+        if ($finalAvailableRooms->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No available rooms found for the selected dates and guest count',
+                'data'    => [
+                    'available_rooms' => [],
+                    'total'           => 0,
+                    'search_criteria' => [
+                        'check_in'  => $validated['checkInDate'],
+                        'check_out' => $validated['checkOutDate'],
+                        'adults'    => $validated['adults'],
+                        'children'  => $numberOfChildren,
+                    ],
+                ],
+            ], 200); // Using 200 status since this is not an error, just no results found
+        }
+
+        // Return the list of available rooms
+        return response()->json([
+            'success' => true,
+            'message' => 'Available rooms retrieved successfully',
+            'data'    => [
+                'available_rooms' => $finalAvailableRooms,
+                'total'           => $finalAvailableRooms->count(),
+                'search_criteria' => [
+                    'check_in'  => $validated['checkInDate'],
+                    'check_out' => $validated['checkOutDate'],
+                    'adults'    => $validated['adults'],
+                    'children'  => $numberOfChildren,
+                ],
+            ],
+        ]);
+    }
+
     public function store(Request $request)
     {
         try {
@@ -120,6 +227,8 @@ class RoomController extends Controller
                 'number_of_adults'        => 'required|integer|min:1',
                 'number_of_children'      => 'nullable|integer|min:0',
 
+                'photo.file_path'         => 'nullable|file|max:2048',
+
                 'features'                => 'nullable|array',
                 'features.*.id'           => 'required|exists:features,id',
                 'features.*.amount'       => 'nullable|numeric|min:0',
@@ -136,6 +245,12 @@ class RoomController extends Controller
 
             $validatedData['created_by'] = Auth::id();
             $validatedData['updated_by'] = Auth::id();
+
+            // Handle photo upload
+            if ($request->hasFile('photo')) {
+                $photo                      = $validatedData['photo']['file_path'];
+                $validatedData['photo_url'] = $this->handlePhotoUpload($photo, 'room_images');
+            }
 
             $room = Room::create($validatedData);
 
@@ -187,6 +302,11 @@ class RoomController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
+            // Delete uploaded photo if transaction failed
+            if (isset($validatedData['photo_url'])) {
+                $this->deletePhoto($validatedData['photo_url']);
+            }
+
             $this->logActivity(
                 'Error Creating Room',
                 "Failed to create room. Error: {$e->getMessage()}",
@@ -207,6 +327,8 @@ class RoomController extends Controller
     public function update(Request $request, $id)
     {
         try {
+
+            $photoUpdated = false;
 
             // Decode JSON fields
             $features = json_decode($request->features, true);
@@ -243,12 +365,12 @@ class RoomController extends Controller
                 'number_of_adults'                     => 'required|integer|min:1',
                 'number_of_children'                   => 'nullable|integer|min:0',
 
+                'photo.file_path'                      => 'nullable|file|max:2048',
+
                 'features'                             => 'nullable|array',
-                'features.*.id'                        => 'nullable|exists:room_features,id',
                 'features.*.id'                        => 'required|exists:features,id',
                 'features.*.amount'                    => 'nullable|numeric|min:0',
                 'features.*.photo_url'                 => 'nullable|string',
-                'features.*.status'                    => 'nullable|string',
 
                 'attachments'                          => 'nullable|array',
                 'attachments.*.type'                   => 'nullable|string',
@@ -261,45 +383,37 @@ class RoomController extends Controller
             DB::beginTransaction();
 
             $validated['updated_by'] = Auth::id();
+            $oldPhotoPath            = $room->photo_url;
+
+            // Handle photo upload if provided
+            if ($request->hasFile('photo')) {
+                // Delete old photo if exists
+                if ($oldPhotoPath) {
+                    $this->deletePhoto($oldPhotoPath);
+                }
+                $photo                  = $validated['photo']['file_path'];
+                $validated['photo_url'] = $this->handlePhotoUpload($photo, 'room_images');
+                $photoUpdated           = true;
+            }
+
             $room->update($validated);
 
             // Handle features
             if (isset($validated['features'])) {
-                $existingFeatureIds = [];
+                // Delete all existing features for the room
+                $room->roomFeatures()->delete();
 
+                // Recreate features from the request
                 foreach ($validated['features'] as $featureData) {
-                    // For existing features that need to be updated
-                    if (isset($featureData['id']) && (! isset($featureData['status']) || $featureData['status'] !== 'deleted')) {
-                        $roomFeature = RoomFeature::find($featureData['id']);
-                        if ($roomFeature && $roomFeature->room_id == $room->id) {
-                            $roomFeature->feature_id = $featureData['feature_id'];
-                            $roomFeature->amount     = $featureData['amount'] ?? $roomFeature->amount;
-                            $roomFeature->photo_url  = $featureData['photo_url'] ?? $roomFeature->photo_url;
-                            $roomFeature->updated_by = Auth::id();
-                            $roomFeature->save();
-
-                            $existingFeatureIds[] = $roomFeature->id;
-                        }
-                    }
-                    // For new features to be created
-                    elseif (! isset($featureData['id']) || $featureData['status'] === 'new') {
-                        $newRoomFeature = RoomFeature::create([
-                            'room_id'    => $room->id,
-                            'feature_id' => $featureData['feature_id'],
-                            'amount'     => $featureData['amount'] ?? 0,
-                            'photo_url'  => $featureData['photo_url'] ?? null,
-                            'created_by' => Auth::id(),
-                            'updated_by' => Auth::id(),
-                        ]);
-
-                        $existingFeatureIds[] = $newRoomFeature->id;
-                    }
+                    RoomFeature::create([
+                        'room_id'    => $room->id,
+                        'feature_id' => $featureData['id'],
+                        'amount'     => $featureData['amount'] ?? 0,
+                        'photo_url'  => $featureData['photo_url'] ?? null,
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
                 }
-
-                // Delete features not in the request
-                $room->roomFeatures()
-                    ->whereNotIn('id', $existingFeatureIds)
-                    ->delete();
             }
 
             // Handle attachments
@@ -350,6 +464,14 @@ class RoomController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
+            // If photo was updated but transaction failed, restore old photo
+            if ($photoUpdated) {
+                // Remove newly uploaded photo if exists
+                if (isset($validated['photo_url'])) {
+                    $this->deletePhoto($validated['photo_url']);
+                }
+            }
+
             $roomName = isset($room) ? $room->name : 'Unknown';
 
             $this->logActivity(
@@ -380,6 +502,11 @@ class RoomController extends Controller
 
             // Delete all room features
             $room->roomFeatures()->delete();
+
+            // Delete photo if exists
+            if ($room->photo_url) {
+                $this->deletePhoto($room->photo_url);
+            }
 
             // Delete the room
             $room->delete();
@@ -453,6 +580,11 @@ class RoomController extends Controller
 
                 // Delete room features
                 $room->roomFeatures()->delete();
+
+                // Delete photo if exists
+                if ($room->photo_url) {
+                    $this->deletePhoto($room->photo_url);
+                }
 
                 // Delete the room itself
                 $room->delete();
@@ -546,5 +678,63 @@ class RoomController extends Controller
             File::delete($filePath);
         }
         $attachment->delete();
+    }
+
+    //==================================== single photo upload ================================
+
+    /**
+     * Handle photo upload for Feature
+     *
+     * @param \Illuminate\Http\UploadedFile|null $file
+     * @param string $folder_path
+     * @return string|null
+     */
+    private function handlePhotoUpload($file, $folder_path)
+    {
+        if (! $file) {
+            return null;
+        }
+
+        // Get current date using Carbon
+        $currentDate     = Carbon::now();
+        $monthYearFolder = $currentDate->format('F_Y'); // e.g., March_2025
+
+        // Create folder path for photos
+        $folderPath = $folder_path . "/" . $monthYearFolder;
+        $publicPath = public_path($folderPath);
+
+        // Create directory if it doesn't exist
+        if (! File::exists($publicPath)) {
+            File::makeDirectory($publicPath, 0777, true, true);
+        }
+
+        // Generate unique filename
+        $fileName = time() . '_' . $file->getClientOriginalName();
+
+        // Move file to the new location
+        $file->move($publicPath, $fileName);
+
+        return '/' . $folderPath . '/' . $fileName;
+    }
+
+    /**
+     * Delete photo file
+     *
+     * @param string|null $photoPath
+     * @return bool
+     */
+    private function deletePhoto($photoPath)
+    {
+        if (! $photoPath) {
+            return false;
+        }
+
+        $filePath = public_path($photoPath);
+        if (File::exists($filePath)) {
+            File::delete($filePath);
+            return true;
+        }
+
+        return false;
     }
 }

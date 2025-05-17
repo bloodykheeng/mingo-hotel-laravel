@@ -42,6 +42,9 @@ Route::apiResource('features', FeatureController::class)->only(['index']);
 // Routes for Room Category Management
 Route::apiResource('room-categories', RoomCategoryController::class)->only(['index', 'show']);
 
+//======= check room availability ============================
+Route::post('check-room-availability', [RoomController::class, 'checkAvailability'])->middleware('optional_auth');
+
 //=============================== private routes ==================================
 Route::group(
     ['middleware' => ['auth:sanctum']],
