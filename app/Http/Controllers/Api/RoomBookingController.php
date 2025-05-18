@@ -181,6 +181,7 @@ class RoomBookingController extends Controller
                 'room_id'            => 'required|exists:rooms,id',
                 'check_in'           => 'required|date|before_or_equal:check_out',
                 'check_out'          => 'required|date|after_or_equal:check_in',
+                'status'             => 'required|string|max:50',
                 'number_of_adults'   => 'required|integer|min:1',
                 'number_of_children' => 'nullable|integer|min:0',
                 'description'        => 'nullable|string',
@@ -274,11 +275,13 @@ class RoomBookingController extends Controller
     {
         try {
             $roomBooking = RoomBooking::findOrFail($id);
+            $oldStatus   = $roomBooking->status; // Store the old status for comparison
 
             $validated = $request->validate([
                 'room_id'            => 'sometimes|exists:rooms,id',
                 'check_in'           => 'sometimes|date|before_or_equal:check_out',
                 'check_out'          => 'sometimes|date|after_or_equal:check_in',
+                'status'             => 'required|string|max:50',
                 'number_of_adults'   => 'sometimes|integer|min:1',
                 'number_of_children' => 'nullable|integer|min:0',
                 'description'        => 'nullable|string',
@@ -307,6 +310,19 @@ class RoomBookingController extends Controller
 
             $roomBooking->update($validated);
 
+            // Update the room's booked status if booking is accepted
+            if ($validated['status'] === 'accepted' && $oldStatus === 'new') {
+                $room = Room::findOrFail($roomBooking->room_id);
+                $room->update(['booked' => true]);
+
+                // Log room status update
+                $this->logActivity(
+                    'room_status_updated',
+                    "Room ID {$room->id} marked as booked due to accepted booking.",
+                    ['room_id' => $room->id, 'booking_id' => $roomBooking->id]
+                );
+            }
+
             $this->logActivity(
                 'room_booking_updated',
                 "Room booking ID {$roomBooking->id} updated.",
@@ -315,6 +331,63 @@ class RoomBookingController extends Controller
 
             // Load the related room and user information for the email
             $roomBooking->load(['room', 'createdBy', 'updatedBy']);
+
+            // Send status change notification to the booking creator
+            if ($validated['status'] === 'accepted' && $oldStatus === 'new') {
+                try {
+                    Mail::send('emails.room-bookings.booking_accepted', [
+                        'roomBooking' => $roomBooking,
+                        'room'        => $roomBooking->room,
+                        'client'      => $roomBooking->createdBy,
+                    ], function ($message) use ($roomBooking) {
+                        $message->to($roomBooking->createdBy->email)
+                            ->subject("Booking Confirmed: {$roomBooking->room->name} - Mingo Hotel Kayunga");
+                    });
+
+                    $this->logActivity(
+                        'email_sent',
+                        "Booking acceptance notification sent to {$roomBooking->createdBy->email}.",
+                        ['room_booking_id' => $roomBooking->id]
+                    );
+                } catch (\Exception $e) {
+                    $this->logActivity(
+                        'email_send_failed',
+                        "Failed to send booking acceptance notification to {$roomBooking->createdBy->email}. Error: {$e->getMessage()}",
+                        [
+                            'room_booking_id' => $roomBooking->id,
+                            'error_line'      => $e->getLine(),
+                            'user_id'         => Auth::id(),
+                        ]
+                    );
+                }
+            } elseif ($validated['status'] === 'rejected' && $oldStatus === 'new') {
+                try {
+                    Mail::send('emails.room-bookings.booking_rejected', [
+                        'roomBooking' => $roomBooking,
+                        'room'        => $roomBooking->room,
+                        'client'      => $roomBooking->createdBy,
+                    ], function ($message) use ($roomBooking) {
+                        $message->to($roomBooking->createdBy->email)
+                            ->subject("Booking Not Available: {$roomBooking->room->name} - Mingo Hotel Kayunga");
+                    });
+
+                    $this->logActivity(
+                        'email_sent',
+                        "Booking rejection notification sent to {$roomBooking->createdBy->email}.",
+                        ['room_booking_id' => $roomBooking->id]
+                    );
+                } catch (\Exception $e) {
+                    $this->logActivity(
+                        'email_send_failed',
+                        "Failed to send booking rejection notification to {$roomBooking->createdBy->email}. Error: {$e->getMessage()}",
+                        [
+                            'room_booking_id' => $roomBooking->id,
+                            'error_line'      => $e->getLine(),
+                            'user_id'         => Auth::id(),
+                        ]
+                    );
+                }
+            }
 
             // Get all System Admin users
             $systemAdmins = User::where('role', 'System Admin')->get();
@@ -369,6 +442,7 @@ class RoomBookingController extends Controller
             ], 500);
         }
     }
+
     public function destroy($id)
     {
         $roomBooking = RoomBooking::findOrFail($id);

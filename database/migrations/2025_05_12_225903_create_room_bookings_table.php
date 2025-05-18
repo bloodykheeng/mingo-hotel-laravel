@@ -16,6 +16,7 @@ return new class extends Migration
             $table->unsignedBigInteger('room_id');
             $table->dateTime('check_in')->nullable();
             $table->dateTime('check_out')->nullable();
+            $table->string('status')->index()->default('new'); //new, actepted , declined
             $table->unsignedInteger('number_of_adults')->default(1)->nullable();
             $table->unsignedInteger('number_of_children')->default(0)->nullable();
             $table->text('description')->nullable();

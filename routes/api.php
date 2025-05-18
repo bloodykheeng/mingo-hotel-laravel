@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Api\ActivityLogsController;
+use App\Http\Controllers\API\ContactUsController;
+use App\Http\Controllers\API\dashboard\RoomStatisticsCardsController;
+use App\Http\Controllers\API\FaqController;
 use App\Http\Controllers\API\FeatureController;
 use App\Http\Controllers\API\RoomBookingController;
 use App\Http\Controllers\API\RoomCategoryController;
@@ -45,10 +48,22 @@ Route::apiResource('room-categories', RoomCategoryController::class)->only(['ind
 //======= check room availability ============================
 Route::post('check-room-availability', [RoomController::class, 'checkAvailability'])->middleware('optional_auth');
 
+Route::Resource('faqs', FaqController::class)->only(['index'])->middleware('optional_auth');
+
+// Contact Us routes
+Route::post('contact-us', [ContactUsController::class, 'sendContactUsNotification'])->middleware('optional_auth');
+
 //=============================== private routes ==================================
 Route::group(
     ['middleware' => ['auth:sanctum']],
     function () {
+
+        //======================= faqs =============================
+        Route::Resource('faqs', FaqController::class)->except(['index']);
+        Route::post('bulk-destroy-faqs', [UserController::class, 'bulkDestroy']);
+
+        // Room dashboard statistics cards
+        Route::get('getAllStatisticsCards', [RoomStatisticsCardsController::class, 'getAllStatisticsCards']);
 
         // Routes for Room Category Management
         Route::apiResource('room-categories', RoomCategoryController::class)->except(['index', 'show']);
