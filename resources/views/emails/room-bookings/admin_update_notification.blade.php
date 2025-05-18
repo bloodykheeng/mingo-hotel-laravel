@@ -134,6 +134,11 @@
                 </div>
 
                 <div class="detail-row">
+                    <span class="detail-label">Booking Status:</span>
+                    <span>{{ ucfirst($roomBooking->status) }}</span> {{-- Capitalizes first letter --}}
+                </div>
+
+                <div class="detail-row">
                     <span class="detail-label">Check-in Date:</span>
                     <span>{{ date('F j, Y', strtotime($roomBooking->check_in)) }}</span>
                 </div>

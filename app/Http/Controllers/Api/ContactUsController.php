@@ -29,7 +29,7 @@ class ContactUsController extends Controller
         ]);
 
         // Get all system admins
-        $systemAdmins = User::where('role', 'System Admin')->get();
+        $systemAdmins = User::role('System Admin')->get();
 
         if ($systemAdmins->isEmpty()) {
             $this->logActivity(
@@ -46,14 +46,14 @@ class ContactUsController extends Controller
 
         try {
             foreach ($systemAdmins as $admin) {
-                Mail::send('emails.contact.contact_notification', [
-                    'name'       => $validated['name'],
-                    'email'      => $validated['email'],
-                    'phone'      => $validated['phone'],
-                    'message'    => $validated['message'],
-                    'subject'    => 'New Contact Form Submission - Mingo Hotel Kayunga',
-                    'hotel_name' => 'Mingo Hotel Kayunga',
-                    'admin'      => $admin,
+                Mail::send('emails.contact-us.contact_us_notification', [
+                    'name'            => $validated['name'],
+                    'email'           => $validated['email'],
+                    'phone'           => $validated['phone'],
+                    'contact_message' => $validated['message'],
+                    'subject'         => 'New Contact Form Submission - Mingo Hotel Kayunga',
+                    'hotel_name'      => 'Mingo Hotel Kayunga',
+                    'admin'           => $admin,
                 ], function ($message) use ($admin) {
                     $message->to($admin->email)
                         ->subject('New Contact Form Submission - Mingo Hotel Kayunga');

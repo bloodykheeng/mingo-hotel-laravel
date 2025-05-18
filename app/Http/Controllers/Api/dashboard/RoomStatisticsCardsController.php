@@ -231,7 +231,11 @@ class RoomStatisticsCardsController extends Controller
         // Common statistics for all roles
         $counts[] = $this->countTotalRooms($roomsBaseQuery);
         $counts[] = $this->countFreeRooms($roomsBaseQuery);
-        $counts[] = $this->countBookedRooms($roomsBaseQuery);
+
+        // Role-specific booking stats
+        if ($userRole === 'System Admin') {
+            $counts[] = $this->countBookedRooms($roomsBaseQuery);
+        }
 
         // If the user is a Client, show their bookings
         // For System Admin, this will show all bookings they personally made

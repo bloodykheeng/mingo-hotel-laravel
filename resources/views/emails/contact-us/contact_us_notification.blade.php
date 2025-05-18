@@ -85,7 +85,7 @@
 
             <div class="message-box">
                 <div class="label">Message:</div>
-                <div>{{ $message }}</div>
+                <div>{{ $contact_message }}</div>
             </div>
 
             <p>Please respond to this inquiry as soon as possible.</p>

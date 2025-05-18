@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Room;
 use App\Models\RoomAttachment;
+use App\Models\RoomBooking;
 use App\Models\RoomFeature;
 use App\Models\User;
 use App\Traits\Loggable;
@@ -32,7 +33,14 @@ class RoomController extends Controller
 
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'like', $searchTerm)
-                    ->orWhere('description', 'like', $searchTerm);
+                    ->orWhere('description', 'like', $searchTerm)
+                    ->orWhere('room_type', 'like', $searchTerm)
+                    ->orWhereHas('roomCategory', function ($subQuery) use ($searchTerm) {
+                        $subQuery->where('name', 'like', $searchTerm);
+                    })
+                    ->orWhereHas('roomFeatures.feature', function ($subQuery) use ($searchTerm) {
+                        $subQuery->where('name', 'like', $searchTerm);
+                    });
             });
         }
 
@@ -44,6 +52,10 @@ class RoomController extends Controller
         // Filter by booked status
         if ($request->has('booked')) {
             $query->where('booked', $request->boolean('booked'));
+        }
+
+        if ($request->has('room_type')) {
+            $query->where('room_type', $request->boolean('room_type'));
         }
 
         // Filter by price range
@@ -74,6 +86,22 @@ class RoomController extends Controller
             $query->whereHas('roomFeatures', function ($q) use ($request) {
                 $q->where('feature_id', $request->query('feature_id'));
             });
+        }
+
+        // Filter by features
+        if ($request->has('features')) {
+            $features = $request->query('features');
+
+            // Check if features is an array and not empty
+            if (is_array($features) && ! empty($features)) {
+                // Extract the IDs from the array of objects
+                $featureIds = array_column($features, 'id');
+
+                // Filter rooms that have any of the selected features
+                $query->whereHas('roomFeatures', function ($q) use ($featureIds) {
+                    $q->whereIn('feature_id', $featureIds);
+                });
+            }
         }
 
         if ($request->boolean('paginate')) {
@@ -137,8 +165,8 @@ class RoomController extends Controller
         $finalAvailableRooms = collect();
 
         foreach ($availableRooms as $room) {
-            // Check for overlapping bookings
-            $hasOverlap = DB::table('room_bookings')
+                                                                            // Check for overlapping bookings
+            $hasOverlap = RoomBooking::whereIn('status', ['new', 'booked']) // Only consider active or pending bookings
                 ->where('room_id', $room->id)
                 ->where(function ($q) use ($checkInDate, $checkOutDate) {
                     // Case 1: New booking check-in date falls within an existing booking

@@ -20,10 +20,37 @@ class RoomBookingController extends Controller
     {
         $query = RoomBooking::with(['room', 'createdBy', 'updatedBy']);
 
+        // Get authenticated user
+        $authUser = Auth::user();
+        if (isset($authUser)) {
+            // Find the user with their relationships to determine role
+            $user = User::find($authUser->id);
+            if (isset($user)) {
+                $userRole = $user->roles->pluck('name')->last();
+
+                // If user is Client, only show rooms they created
+                if ($userRole === 'Client') {
+                    $query->where('created_by', $user->id);
+                }
+                // System Admin sees all rooms
+            }
+        }
+
         if ($request->has('search')) {
-            $search = $request->query('search');
-            $query->whereHas('room', function ($q) use ($search) {
-                $q->where('name', 'like', '%' . $search . '%');
+            $search = '%' . $request->query('search') . '%';
+
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('room', function ($roomQuery) use ($search) {
+                    $roomQuery->where('name', 'like', $search);
+                })
+                    ->orWhereHas('createdBy', function ($createdQuery) use ($search) {
+                        $createdQuery->where('name', 'like', $search)
+                            ->orWhere('email', 'like', $search);
+                    })
+                    ->orWhereHas('updatedBy', function ($updatedQuery) use ($search) {
+                        $updatedQuery->where('name', 'like', $search)
+                            ->orWhere('email', 'like', $search);
+                    });
             });
         }
 
@@ -52,6 +79,22 @@ class RoomBookingController extends Controller
                     'message'       => 'Room not found',
                     'error_details' => "Room with ID {$roomId} does not exist.",
                     'errors'        => ['room_id' => 'The selected room does not exist.'],
+                ], 422);
+            }
+
+            // Check if user already has a pending booking for this room
+            // Check for duplicate pending booking of same room by same user
+            $pendingBookingExists = RoomBooking::where('room_id', $roomId)
+                ->where('status', 'new')
+                ->where('created_by', Auth::user()->id) // or $data['created_by'] if passed explicitly
+                ->when($method === 'update' && $bookingId, fn($q) => $q->where('id', '!=', $bookingId))
+                ->exists();
+
+            if ($pendingBookingExists) {
+                return response()->json([
+                    'message'       => 'You already have a pending booking for this room.',
+                    'error_details' => "Duplicate pending booking detected for room {$room->name}.",
+                    'errors'        => ['room_id' => 'You already have a pending booking for this room. Please wait for confirmation.'],
                 ], 422);
             }
 
@@ -108,6 +151,7 @@ class RoomBookingController extends Controller
 
             // Check for overlapping bookings
             $query = RoomBooking::where('room_id', $roomId)
+                ->whereIn('status', ['new', 'booked']) // Only consider active or pending bookings
                 ->where(function ($q) use ($checkInDate, $checkOutDate) {
                     // Case 1: New booking check-in date falls within an existing booking
                     $q->where(function ($q1) use ($checkInDate, $checkOutDate) {
@@ -217,7 +261,7 @@ class RoomBookingController extends Controller
             $roomBooking->load(['room', 'createdBy']);
 
             // Get all System Admin users
-            $systemAdmins = User::where('role', 'System Admin')->get();
+            $systemAdmins = User::role('System Admin')->get();
 
             // Send email notification to all System Admins
             foreach ($systemAdmins as $admin) {
@@ -310,15 +354,26 @@ class RoomBookingController extends Controller
 
             $roomBooking->update($validated);
 
+            // Update the room's booked status based on booking status
+            $room = Room::findOrFail($roomBooking->room_id);
+
             // Update the room's booked status if booking is accepted
             if ($validated['status'] === 'accepted' && $oldStatus === 'new') {
-                $room = Room::findOrFail($roomBooking->room_id);
                 $room->update(['booked' => true]);
 
                 // Log room status update
                 $this->logActivity(
                     'room_status_updated',
                     "Room ID {$room->id} marked as booked due to accepted booking.",
+                    ['room_id' => $room->id, 'booking_id' => $roomBooking->id]
+                );
+            } else {
+                $room->update(['booked' => false]);
+
+                // Log room status reversal
+                $this->logActivity(
+                    'room_status_updated',
+                    "Room ID {$room->id} unbooked due to booking status change.",
                     ['room_id' => $room->id, 'booking_id' => $roomBooking->id]
                 );
             }
@@ -390,7 +445,7 @@ class RoomBookingController extends Controller
             }
 
             // Get all System Admin users
-            $systemAdmins = User::where('role', 'System Admin')->get();
+            $systemAdmins = User::role('System Admin')->get();
 
             // Send email notification to all System Admins
             foreach ($systemAdmins as $admin) {

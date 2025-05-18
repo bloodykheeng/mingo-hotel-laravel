@@ -12,7 +12,7 @@ class RoomBooking extends Model
         'room_id',
         'check_in',
         'check_out',
-        'status',
+        'status', // new, accepted, rejected
         'number_of_adults',
         'number_of_children',
         'description',
