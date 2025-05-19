@@ -36,6 +36,7 @@ class RoomCategoryController extends Controller
             $validated = $request->validate([
                 'name'            => 'required|string|max:255|unique:room_categories,name',
                 'icon'            => 'nullable|string|max:255',
+                'price'           => 'required|numeric|min:0',
                 'description'     => 'nullable|string|max:1000',
                 'status'          => 'required|string|max:50',
                 'photo.file_path' => 'nullable|file|max:2048',
@@ -102,6 +103,7 @@ class RoomCategoryController extends Controller
             $validated = $request->validate([
                 'name'            => 'sometimes|string|max:255|unique:room_categories,name,' . $roomCategory->id,
                 'icon'            => 'nullable|string|max:255',
+                'price'           => 'required|numeric|min:0',
                 'description'     => 'nullable|string|max:1000',
                 'status'          => 'sometimes|string|max:50',
                 'photo.file_path' => 'nullable|file|max:2048',
