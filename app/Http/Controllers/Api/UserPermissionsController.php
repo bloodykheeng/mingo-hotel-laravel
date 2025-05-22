@@ -1,6 +1,5 @@
 <?php
-
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -54,10 +53,10 @@ class UserPermissionsController extends Controller
 
         // Filter the available permissions to find the ones not present in the current role
         $permissionsNotInCurrentRole = $allPermissions->filter(function ($permission) use ($currentRolePermissions) {
-            return !$currentRolePermissions->contains('id', $permission->id);
+            return ! $currentRolePermissions->contains('id', $permission->id);
         });
 
-        return response()->json([...$permissionsNotInCurrentRole]);
+        return response()->json([ ...$permissionsNotInCurrentRole]);
     }
 
     /**

@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\Api\ActivityLogsController;
+use App\Http\Controllers\API\ActivityLogsController;
 use App\Http\Controllers\API\ContactUsController;
 use App\Http\Controllers\API\dashboard\RoomStatisticsCardsController;
 use App\Http\Controllers\API\FaqController;
@@ -8,9 +8,9 @@ use App\Http\Controllers\API\FeatureController;
 use App\Http\Controllers\API\RoomBookingController;
 use App\Http\Controllers\API\RoomCategoryController;
 use App\Http\Controllers\API\RoomController;
-use App\Http\Controllers\Api\UserController;
-use App\Http\Controllers\Api\UserPermissionsController;
-use App\Http\Controllers\Api\UserRolesController;
+use App\Http\Controllers\API\UserController;
+use App\Http\Controllers\API\UserPermissionsController;
+use App\Http\Controllers\API\UserRolesController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EmailTestController;
 use App\Http\Controllers\PasswordResetController;
