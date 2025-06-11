@@ -448,8 +448,8 @@ class RoomController extends Controller
             if (isset($validated['attachments'])) {
                 $existingAttachmentIds = collect($validated['attachments'])
                     ->where('status', 'existing')
-                    ->whereNotNull('id')
-                    ->pluck('id')
+                    ->whereNotNull('existing_attachment_id')
+                    ->pluck('existing_attachment_id')
                     ->toArray();
 
                 // Delete removed attachments

@@ -5,6 +5,7 @@ use App\Http\Controllers\API\ContactUsController;
 use App\Http\Controllers\API\dashboard\RoomStatisticsCardsController;
 use App\Http\Controllers\API\FaqController;
 use App\Http\Controllers\API\FeatureController;
+use App\Http\Controllers\API\HeroSliderController;
 use App\Http\Controllers\API\RoomBookingController;
 use App\Http\Controllers\API\RoomCategoryController;
 use App\Http\Controllers\API\RoomController;
@@ -53,10 +54,17 @@ Route::Resource('faqs', FaqController::class)->only(['index'])->middleware('opti
 // Contact Us routes
 Route::post('contact-us', [ContactUsController::class, 'sendContactUsNotification'])->middleware('optional_auth');
 
+// Routes for Hero Slider Management
+Route::apiResource('hero-sliders', HeroSliderController::class)->only(['index', 'show']);
+
 //=============================== private routes ==================================
 Route::group(
     ['middleware' => ['auth:sanctum']],
     function () {
+
+        // Routes for Hero Slider Management
+        Route::apiResource('hero-sliders', HeroSliderController::class)->except(['index', 'show']);
+        Route::post('bulk-destroy-hero-sliders', [HeroSliderController::class, 'bulkDestroy']);
 
         //======================= faqs =============================
         Route::Resource('faqs', FaqController::class)->except(['index']);

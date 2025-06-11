@@ -21,6 +21,7 @@ return new class extends Migration
             $table->unsignedBigInteger('room_category_id');
             $table->decimal('price', 15, 2);
             $table->integer('stars')->default(0);
+            $table->integer('number_of_rooms')->nullable();
             $table->boolean('booked')->default(false);
             $table->unsignedInteger('number_of_adults')->default(1);
             $table->unsignedInteger('number_of_children')->default(0);
