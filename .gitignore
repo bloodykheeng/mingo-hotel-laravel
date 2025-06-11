@@ -28,3 +28,4 @@ yarn-error.log
 /public/room_category_images/*
 /public/room_images/*
 /public/user_photos/*
+/public/hero_slider_images/*
