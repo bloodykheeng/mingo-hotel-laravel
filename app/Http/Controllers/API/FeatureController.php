@@ -40,7 +40,8 @@ class FeatureController extends Controller
                 'name'            => 'required|string|max:255|unique:features,name',
                 'icon'            => 'nullable|string|max:255',
                 'status'          => 'required|string|max:50',
-                'photo.file_path' => 'nullable|file|max:2048',
+                // 'photo.file_path' => 'nullable|file|max:2048',
+                'photo.file_path' => 'nullable|file|max:20480',
             ]);
 
             $validated['created_by'] = Auth::id();
@@ -110,7 +111,8 @@ class FeatureController extends Controller
                 'name'            => 'sometimes|string|max:255|unique:features,name,' . $feature->id,
                 'status'          => 'sometimes|string|max:50',
                 'icon'            => 'nullable|string|max:255',
-                'photo.file_path' => 'nullable|file|max:2048',
+                // 'photo.file_path' => 'nullable|file|max:2048',
+                'photo.file_path' => 'nullable|file|max:20480',
             ]);
 
             $validated['updated_by'] = Auth::id();

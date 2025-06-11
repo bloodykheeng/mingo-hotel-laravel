@@ -43,7 +43,8 @@ class HeroSliderController extends Controller
                 'button_link_one' => 'nullable|string|max:255',
                 'button_link_two' => 'nullable|string|max:255',
                 'status'          => 'required|string|max:50',
-                'photo.file_path' => 'nullable|file|max:2048',
+                // 'photo.file_path' => 'nullable|file|max:2048',
+                'photo.file_path' => 'nullable|file|max:20480',
             ]);
 
             $validated['created_by'] = Auth::id();
@@ -115,7 +116,8 @@ class HeroSliderController extends Controller
                 'button_link_one' => 'nullable|string|max:255',
                 'button_link_two' => 'nullable|string|max:255',
                 'status'          => 'sometimes|string|max:50',
-                'photo.file_path' => 'nullable|file|max:2048',
+                // 'photo.file_path' => 'nullable|file|max:2048',
+                'photo.file_path' => 'nullable|file|max:20480',
             ]);
 
             $validated['updated_by'] = Auth::id();

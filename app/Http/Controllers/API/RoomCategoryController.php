@@ -39,7 +39,8 @@ class RoomCategoryController extends Controller
                 'price'           => 'required|numeric|min:0',
                 'description'     => 'nullable|string|max:1000',
                 'status'          => 'required|string|max:50',
-                'photo.file_path' => 'nullable|file|max:2048',
+                // 'photo.file_path' => 'nullable|file|max:2048',
+                'photo.file_path' => 'nullable|file|max:20480',
             ]);
 
             $validated['created_by'] = Auth::id();
@@ -106,7 +107,8 @@ class RoomCategoryController extends Controller
                 'price'           => 'required|numeric|min:0',
                 'description'     => 'nullable|string|max:1000',
                 'status'          => 'sometimes|string|max:50',
-                'photo.file_path' => 'nullable|file|max:2048',
+                // 'photo.file_path' => 'nullable|file|max:2048',
+                'photo.file_path' => 'nullable|file|max:20480',
             ]);
 
             $validated['updated_by'] = Auth::id();

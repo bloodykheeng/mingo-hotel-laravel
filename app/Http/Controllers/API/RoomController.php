@@ -255,7 +255,8 @@ class RoomController extends Controller
                 'number_of_adults'        => 'required|integer|min:1',
                 'number_of_children'      => 'nullable|integer|min:0',
 
-                'photo.file_path'         => 'nullable|file|max:2048',
+                // 'photo.file_path'         => 'nullable|file|max:2048',
+                'photo.file_path'         => 'nullable|file|max:20480',
 
                 'features'                => 'nullable|array',
                 'features.*.id'           => 'required|exists:features,id',
@@ -393,7 +394,8 @@ class RoomController extends Controller
                 'number_of_adults'                     => 'required|integer|min:1',
                 'number_of_children'                   => 'nullable|integer|min:0',
 
-                'photo.file_path'                      => 'nullable|file|max:2048',
+                // 'photo.file_path'                      => 'nullable|file|max:2048',
+                'photo.file_path'                      => 'nullable|file|max:20480',
 
                 'features'                             => 'nullable|array',
                 'features.*.id'                        => 'required|exists:features,id',
