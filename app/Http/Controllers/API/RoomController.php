@@ -130,6 +130,7 @@ class RoomController extends Controller
     {
         $room = Room::with([
             'roomFeatures.feature',
+            'roomCategory',
             'roomAttachments',
             'createdBy',
             'updatedBy',
