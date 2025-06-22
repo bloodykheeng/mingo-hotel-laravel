@@ -129,7 +129,8 @@ class UserController extends Controller
                 'status'                 => 'nullable|string',
                 'date_of_birth'          => 'nullable|date',
                 'gender'                 => 'nullable|string|in:Male,Female,Prefer not to say',
-                'photo'                  => 'nullable|image|max:2048', // Max 2MB image
+                // 'photo'                  => 'nullable|image|max:2048', // Max 2MB image
+                'photo'                  => 'nullable|image|max:20480', // Max 20MB image
                 'agree'                  => 'nullable|boolean',
                 'device_token'           => 'nullable|string',
                 'web_app_firebase_token' => 'nullable|string',
@@ -243,7 +244,8 @@ class UserController extends Controller
                 'status'                 => 'sometimes|nullable|string',
                 'date_of_birth'          => 'sometimes|nullable|date',
                 'gender'                 => 'sometimes|nullable|string|in:Male,Female,Prefer not to say',
-                'photo'                  => 'sometimes|nullable|image|max:2048', // Max 2MB image
+                // 'photo'                  => 'sometimes|nullable|image|max:2048', // Max 2MB image
+                'photo'                  => 'nullable|image|max:20480', // Max 20MB image
                 'agree'                  => 'sometimes|nullable|boolean',
                 'device_token'           => 'sometimes|nullable|string',
                 'web_app_firebase_token' => 'sometimes|nullable|string',

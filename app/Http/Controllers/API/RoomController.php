@@ -55,7 +55,7 @@ class RoomController extends Controller
         }
 
         if ($request->has('room_type')) {
-            $query->where('room_type', $request->boolean('room_type'));
+            $query->where('room_type', $request->query('room_type'));
         }
 
         // Filter by price range
@@ -101,6 +101,20 @@ class RoomController extends Controller
                 $query->whereHas('roomFeatures', function ($q) use ($featureIds) {
                     $q->whereIn('feature_id', $featureIds);
                 });
+            }
+        }
+
+        // Filter by room categories
+        if ($request->has('room_categories')) {
+            $roomCategories = $request->query('room_categories');
+
+            // Check if room_categories is an array and not empty
+            if (is_array($roomCategories) && ! empty($roomCategories)) {
+                // Extract the IDs from the array of objects
+                $roomCategoryIds = array_column($roomCategories, 'id');
+
+                // Filter rooms by room_category_id
+                $query->whereIn('room_category_id', $roomCategoryIds);
             }
         }
 

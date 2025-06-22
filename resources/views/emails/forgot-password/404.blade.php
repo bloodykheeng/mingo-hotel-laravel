@@ -72,7 +72,7 @@
 
     <div class="header">
         <h1><i class="bi bi-shield-lock-fill me-2"></i>Confidential</h1>
-        <h4>PPDA CMS - Public Procurement and Disposal Authority</h4>
+        <h4>Mingo Hotel Uganda</h4>
     </div>
 
     <div class="content-box">
@@ -82,14 +82,14 @@
             This page is restricted and cannot be accessed without valid authorization.
         </p>
         <p>
-            If you believe this is a mistake, please contact the PPDA CMS support team.
+            If you believe this is a mistake, please contact the Mingo Hotel Uganda support team.
         </p>
 
         <a href="{{ env('FRONTEND_URL') }}" class="btn btn-custom text-white mt-4">
             <i class="bi bi-box-arrow-in-left me-2"></i>Go to Login
         </a>
 
-        <p class="footer-text mt-4">Thank you for using the PPDA CMS platform.</p>
+        <p class="footer-text mt-4">Thank you.</p>
     </div>
 
 </body>

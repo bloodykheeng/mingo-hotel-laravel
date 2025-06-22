@@ -54,7 +54,7 @@
 <body>
     <div class="header text-center">
         <h1><i class="bi bi-shield-lock-fill me-2"></i>Confidential</h1>
-        <h4>PPDA CMS</h4>
+        <h4>Mingo Hotel Uganda</h4>
     </div>
 
     <div class="content text-center">
